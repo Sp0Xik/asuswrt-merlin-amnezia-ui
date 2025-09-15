@@ -1,0 +1,95 @@
+#!/bin/sh
+
+# Amnezia-UI Install/Uninstall Script for ASUSWRT-Merlin
+# Based on XRAYUI, adapted for AmneziaWG
+
+VERSION="0.1.0"
+MODEL=$(nvram get model)
+FW_VERSION=$(nvram get firmver)
+
+echo "Amnezia-UI v$VERSION Installer"
+
+# Check prerequisites
+if [ ! -f /jffs/.ash ]; then
+    echo "JFFS not enabled. Enable JFFS in Administration > System."
+    exit 1
+fi
+
+if [ ! -d /opt ]; then
+    echo "Entware not installed. Install from https://github.com/Entware/Entware/wiki/Install-on-ASUSWRT-Merlin."
+    exit 1
+fi
+
+case "$1" in
+    install)
+        # Create directories
+        mkdir -p /jffs/addons/amnezia-ui
+        mkdir -p /jffs/amnezia-ui_custom
+        mkdir -p /jffs/scripts
+
+        # Copy files (assume they are in current dir after tar extract)
+        cp -r www /www/amnezia-ui  # Web UI to router's www
+        cp amnezia-ui /jffs/scripts/amnezia-ui  # This script itself
+        chmod 0755 /jffs/scripts/amnezia-ui
+
+        # Download/Install AmneziaWG (adapt from Amnezia repo; for now, use WireGuard + obfs)
+        opkg update
+        opkg install wireguard-tools  # Base WireGuard
+        # For obfs: wget Amnezia obfs binary if available; TODO: compile Go obfs for ARM
+        wget -O /opt/bin/amneziawg https://github.com/amnezia-vpn/amneziawg/releases/latest/download/amneziawg-linux-arm  # Placeholder; check arch
+        chmod +x /opt/bin/amneziawg
+
+        # Setup cron for auto-start
+        echo "*/2 * * * * /jffs/scripts/amnezia-ui start" >> /var/spool/cron/crontabs/admin
+
+        # Add to services-start if not present
+        if ! grep -q "amnezia-ui" /jffs/scripts/services-start; then
+            echo "/jffs/scripts/amnezia-ui start" >> /jffs/scripts/services-start
+        fi
+
+        # Create config dir
+        mkdir -p /jffs/amnezia-ui/configs
+
+        echo "Installation complete! Reboot router or run /jffs/scripts/amnezia-ui start"
+        ;;
+
+    uninstall)
+        # Stop service
+        /jffs/scripts/amnezia-ui stop
+
+        # Remove files
+        rm -rf /www/amnezia-ui
+        rm -rf /jffs/addons/amnezia-ui
+        rm -f /jffs/scripts/amnezia-ui
+        rm -rf /jffs/amnezia-ui_custom
+        rm -rf /jffs/amnezia-ui
+
+        # Remove from cron and services
+        sed -i '/amnezia-ui/d' /var/spool/cron/crontabs/admin
+        sed -i '/amnezia-ui/d' /jffs/scripts/services-start
+
+        echo "Uninstallation complete!"
+        ;;
+
+    start)
+        # Start AmneziaWG based on config
+        if [ -f /jffs/amnezia-ui/configs/client.conf ]; then
+            /opt/bin/amneziawg-quick up client  # Example; adapt to mode
+            # Apply firewall rules (from custom scripts if exist)
+            [ -x /jffs/amnezia-ui_custom/firewall_client ] && /jffs/amnezia-ui_custom/firewall_client
+        fi
+        # Restart httpd to load UI
+        service restart_httpd
+        ;;
+
+    stop)
+        /opt/bin/amneziawg-quick down client
+        [ -x /jffs/amnezia-ui_custom/firewall_cleanup ] && /jffs/amnezia-ui_custom/firewall_cleanup
+        service restart_httpd
+        ;;
+
+    *)
+        echo "Usage: $0 {install|uninstall|start|stop}"
+        exit 1
+        ;;
+esac
