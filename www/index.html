@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amnezia-UI</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Amnezia-UI Dashboard</h1>
+        <div id="status" class="status">Status: <span id="status-text">Disconnected</span></div>
+        
+        <div class="controls">
+            <button onclick="startAmnezia()">Start</button>
+            <button onclick="stopAmnezia()">Stop</button>
+            <button onclick="generateConfig()">Generate Config</button>
+        </div>
+        
+        <h2>Add Server</h2>
+        <form id="server-form">
+            <label>Interface Name: <input type="text" id="iface" value="amnezia0" required></label><br>
+            <label>Private Key: <input type="text" id="private-key" placeholder="Your WG private key" required></label><br>
+            <label>Public Key (Peer): <input type="text" id="public-key" placeholder="Server public key" required></label><br>
+            <label>Endpoint: <input type="text" id="endpoint" placeholder="server.example.com:51820" required></label><br>
+            <label>Allowed IPs: <input type="text" id="allowed-ips" value="0.0.0.0/0" required></label><br>
+            <label>PreShared Key: <input type="text" id="psk" placeholder="Optional PSK"></label><br>
+            <label>Obfuscation: <input type="checkbox" id="obfs"> Enable Amnezia Obfuscation (Cloak)</label><br>
+            <button type="submit">Add Server</button>
+        </form>
+        
+        <h2>Active Servers</h2>
+        <table id="servers-table">
+            <thead>
+                <tr>
+                    <th>Interface</th>
+                    <th>Endpoint</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- JS will populate -->
+            </tbody>
+        </table>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html>
