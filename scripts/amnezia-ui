@@ -59,24 +59,79 @@ check_binary() {
 
 case "$1" in
     install)
-        # ... (keep previous install code)
-        mkdir -p $CONFIG_DIR
+        # Check prerequisites
+        if [ ! -f /jffs/.ash ]; then
+            echo "JFFS not enabled. Enable JFFS in Administration > System."
+            exit 1
+        fi
+
+        if [ ! -d /opt ]; then
+            echo "Entware not installed. Install from https://github.com/Entware/Entware/wiki/Install-on-ASUSWRT-Merlin."
+            exit 1
+        fi
+
+        # Create directories
+        mkdir -p /jffs/addons/amnezia-ui
         mkdir -p /jffs/amnezia-ui_custom
-        # Copy www/ (as before)
-        cp -r ../www /www/amnezia-ui  # Relative from tar
-        # ... rest as before
+        mkdir -p /jffs/scripts
+        mkdir -p $CONFIG_DIR
+
+        # Copy files from extracted dir (after tar to /jffs/addons/amnezia-ui)
+        cp -r /jffs/addons/amnezia-ui/www /www/amnezia-ui
+        cp -r /jffs/addons/amnezia-ui/configs /jffs/amnezia-ui/  # Optional, for examples
+        # Cleanup after copy
+        rm -rf /jffs/addons/amnezia-ui
+
+        # This script itself (already mv'ed in install command)
+        chmod 0755 /jffs/scripts/amnezia-ui
+
+        # Download/Install AmneziaWG (adapt from Amnezia repo; for now, use WireGuard + obfs)
+        opkg update
+        opkg install wireguard-tools  # Base WireGuard
+        # For obfs: wget Amnezia obfs binary if available; TODO: compile Go obfs for ARM
         check_binary
-        echo "Installation complete!"
+
+        # Setup cron for auto-start (coexist with XRAYUI or others)
+        if [ -f /jffs/scripts/xrayui ]; then
+            echo "Coexisting with XRAYUI detected — adding Amnezia-UI cron entry"
+        fi
+        if ! grep -q "amnezia-ui" /var/spool/cron/crontabs/admin; then
+            echo "*/2 * * * * /jffs/scripts/amnezia-ui start" >> /var/spool/cron/crontabs/admin
+        fi
+
+        # Add to services-start if not present (coexist with XRAYUI or others)
+        if [ -f /jffs/scripts/xrayui ]; then
+            echo "Coexisting with XRAYUI detected — adding Amnezia-UI services entry"
+        fi
+        if ! grep -q "amnezia-ui" /jffs/scripts/services-start; then
+            echo "/jffs/scripts/amnezia-ui start" >> /jffs/scripts/services-start
+        fi
+
+        echo "Installation complete! Reboot router or run /jffs/scripts/amnezia-ui start"
         ;;
 
     uninstall)
-        # ... keep previous
+        # Stop service
+        /jffs/scripts/amnezia-ui stop
+
+        # Remove files
+        rm -rf /www/amnezia-ui
+        rm -rf /jffs/addons/amnezia-ui
+        rm -rf /jffs/amnezia-ui
+        rm -f /jffs/scripts/amnezia-ui
+
+        # Remove from cron and services
+        sed -i '/amnezia-ui/d' /var/spool/cron/crontabs/admin
+        sed -i '/amnezia-ui/d' /jffs/scripts/services-start
+
+        echo "Uninstallation complete!"
         ;;
 
     start)
         check_binary
         if [ -f "$CONFIG_DIR/$IFACE.conf" ]; then
             $BINARY up $IFACE
+            # Apply custom firewall (separate from XRAYUI customs — use /jffs/amnezia-ui_custom/)
             [ -x /jffs/amnezia-ui_custom/firewall_client ] && /jffs/amnezia-ui_custom/firewall_client
             service restart_httpd
             text_output "Started"
@@ -88,6 +143,7 @@ case "$1" in
     stop)
         check_binary
         $BINARY down $IFACE 2>/dev/null
+        # Apply custom firewall cleanup (separate from XRAYUI customs — use /jffs/amnezia-ui_custom/)
         [ -x /jffs/amnezia-ui_custom/firewall_cleanup ] && /jffs/amnezia-ui_custom/firewall_cleanup
         service restart_httpd
         text_output "Stopped"
