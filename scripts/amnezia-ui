@@ -3,7 +3,7 @@
 # Amnezia-UI Script for ASUSWRT-Merlin (adapted from XRAYUI)
 # Handles install/uninstall/start/stop + AJAX actions
 
-VERSION="0.1.0"
+VERSION="0.1.1"
 CONFIG_DIR="/jffs/amnezia-ui/configs"
 BINARY="/opt/bin/amneziawg-go"
 
@@ -59,11 +59,13 @@ check_binary() {
 
 case "$1" in
     install)
-        # Check prerequisites
-        if [ ! -f /jffs/.ash ]; then
-            echo "JFFS not enabled. Enable JFFS in Administration > System."
+        # Check JFFS (more robust: check dir + writability)
+        if [ ! -d /jffs ] || ! touch /jffs/.amnezia-test 2>/dev/null; then
+            echo "JFFS not enabled or not writable. Enable JFFS in Administration > System and reboot."
+            echo "Debug: ls /jffs/ = $(ls /jffs/ 2>/dev/null); df = $(df -h | grep jffs)"
             exit 1
         fi
+        rm -f /jffs/.amnezia-test  # Cleanup test file
 
         if [ ! -d /opt ]; then
             echo "Entware not installed. Install from https://github.com/Entware/Entware/wiki/Install-on-ASUSWRT-Merlin."
@@ -100,6 +102,10 @@ case "$1" in
         fi
 
         # Add to services-start if not present (coexist with XRAYUI or others)
+        if [ ! -f /jffs/scripts/services-start ]; then
+            touch /jffs/scripts/services-start
+            chmod 0755 /jffs/scripts/services-start
+        fi
         if [ -f /jffs/scripts/xrayui ]; then
             echo "Coexisting with XRAYUI detected — adding Amnezia-UI services entry"
         fi
