@@ -2,8 +2,9 @@
 
 # Amnezia-UI Script for ASUSWRT-Merlin (adapted from XRAYUI)
 # Handles install/uninstall/start/stop + AJAX actions
+# Compatible with Merlin WireGuard, VPN Director, and XRAYUI
 
-VERSION="0.1.1"
+VERSION="0.1.5"
 CONFIG_DIR="/jffs/amnezia-ui/configs"
 BINARY="/opt/bin/amneziawg-go"
 
@@ -23,6 +24,8 @@ elif [ -n "$CONTENT_LENGTH" ]; then
     ALLOWED_IPS=$(echo "$POST_DATA" | sed 's/.*allowed-ips=\([^&]*\).*/\1/')
     PSK=$(echo "$POST_DATA" | sed 's/.*psk=\([^&]*\).*/\1/')
     OBFS=$(echo "$POST_DATA" | sed 's/.*obfs=on.*/1/' | grep -q 1 && echo "true" || echo "false")
+    S1=$(echo "$POST_DATA" | sed 's/.*s1=\([^&]*\).*/\1/')
+    S2=$(echo "$POST_DATA" | sed 's/.*s2=\([^&]*\).*/\1/')
 fi
 
 # Function to output JSON
@@ -41,18 +44,20 @@ text_output() {
     exit 0
 }
 
-# Check if binary exists, fallback to wg
+# Check if binary exists, fallback to Merlin WG
 check_binary() {
     if [ ! -x "$BINARY" ]; then
-        # Install if missing (build from source; assume Entware has git/make/go — if not, manual later)
+        # Install if missing (build from source; assume Entware has git/make/go)
         if [ ! -d /tmp/amneziawg-go ]; then
+            opkg update
+            opkg install make golang  # Dependencies for amneziawg-go
             cd /tmp && git clone https://github.com/amnezia-vpn/amneziawg-go && cd amneziawg-go && make
             cp amneziawg-go $BINARY && chmod +x $BINARY
         fi
-        # Fallback: use wg if build fails
+        # Fallback: use Merlin's wg-quick if build fails
         if [ ! -x "$BINARY" ]; then
-            BINARY="/usr/sbin/wg-quick"  # Standard WG, obfs via custom PostUp
-            echo "Warning: Using standard WG (no built-in obfs; add manual)"
+            BINARY="/usr/sbin/wg-quick"  # Merlin built-in WireGuard
+            echo "Warning: Using Merlin's standard WG (no AmneziaWG S1/S2 obfs; add manual)"
         fi
     fi
 }
@@ -68,7 +73,7 @@ case "$1" in
         rm -f /jffs/.amnezia-test  # Cleanup test file
 
         if [ ! -d /opt ]; then
-            echo "Entware not installed. Install from https://github.com/Entware/Entware/wiki/Install-on-ASUSWRT-Merlin."
+            echo "Entware not installed. Run 'amtm' in SSH and install Entware, then try again."
             exit 1
         fi
 
@@ -79,7 +84,7 @@ case "$1" in
         mkdir -p $CONFIG_DIR
 
         # Copy files from extracted dir (after tar to /jffs/addons/amnezia-ui)
-        cp -r /jffs/addons/amnezia-ui/www /www/amnezia-ui
+        cp -r /jffs/addons/amnezia-ui/www /www/user/amnezia-ui
         cp -r /jffs/addons/amnezia-ui/configs /jffs/amnezia-ui/  # Optional, for examples
         # Cleanup after copy
         rm -rf /jffs/addons/amnezia-ui
@@ -87,10 +92,7 @@ case "$1" in
         # This script itself (already mv'ed in install command)
         chmod 0755 /jffs/scripts/amnezia-ui
 
-        # Download/Install AmneziaWG (adapt from Amnezia repo; for now, use WireGuard + obfs)
-        opkg update
-        opkg install wireguard-tools  # Base WireGuard
-        # For obfs: wget Amnezia obfs binary if available; TODO: compile Go obfs for ARM
+        # Check/Install AmneziaWG (use Merlin WG as fallback)
         check_binary
 
         # Setup cron for auto-start (coexist with XRAYUI or others)
@@ -121,7 +123,7 @@ case "$1" in
         /jffs/scripts/amnezia-ui stop
 
         # Remove files
-        rm -rf /www/amnezia-ui
+        rm -rf /www/user/amnezia-ui
         rm -rf /jffs/addons/amnezia-ui
         rm -rf /jffs/amnezia-ui
         rm -f /jffs/scripts/amnezia-ui
@@ -130,6 +132,7 @@ case "$1" in
         sed -i '/amnezia-ui/d' /var/spool/cron/crontabs/admin
         sed -i '/amnezia-ui/d' /jffs/scripts/services-start
 
+        # Note: make, golang, amneziawg-go not removed to avoid breaking other addons
         echo "Uninstallation complete!"
         ;;
 
@@ -137,7 +140,7 @@ case "$1" in
         check_binary
         if [ -f "$CONFIG_DIR/$IFACE.conf" ]; then
             $BINARY up $IFACE
-            # Apply custom firewall (separate from XRAYUI customs — use /jffs/amnezia-ui_custom/)
+            # Apply custom firewall (separate from XRAYUI/Merlin WG)
             [ -x /jffs/amnezia-ui_custom/firewall_client ] && /jffs/amnezia-ui_custom/firewall_client
             service restart_httpd
             text_output "Started"
@@ -149,13 +152,12 @@ case "$1" in
     stop)
         check_binary
         $BINARY down $IFACE 2>/dev/null
-        # Apply custom firewall cleanup (separate from XRAYUI customs — use /jffs/amnezia-ui_custom/)
+        # Apply custom firewall cleanup (separate from XRAYUI/Merlin WG)
         [ -x /jffs/amnezia-ui_custom/firewall_cleanup ] && /jffs/amnezia-ui_custom/firewall_cleanup
         service restart_httpd
         text_output "Stopped"
         ;;
 
-    # AJAX actions
     status)
         check_binary
         if $BINARY show $IFACE >/dev/null 2>&1; then
@@ -194,11 +196,13 @@ Endpoint = $ENDPOINT
 AllowedIPs = $ALLOWED_IPS
 PersistentKeepalive = 25
 ${PSK:+PresharedKey = $PSK}
+${S1:+S1 = $S1}
+${S2:+S2 = $S2}
 EOF
-        if [ "$OBFS" = "true" ]; then
-            # Add Amnezia obfs (example PostUp for scrambling; from docs)
+        if [ "$OBFS" = "true" ] && [ "$BINARY" = "/usr/sbin/wg-quick" ]; then
+            # Only add iptables if using wg-quick (amneziawg-go handles obfs natively)
             echo "PostUp = iptables -t mangle -A OUTPUT -p udp --dport 51820 -j TCPMSS --clamp-mss-to-pmtu" >> "$CONFIG_DIR/$IFACE.conf"
-            echo "# Amnezia Obfuscation enabled (S1/S2 keys in UI later)" >> "$CONFIG_DIR/$IFACE.conf"
+            echo "# Amnezia Obfuscation enabled (S1/S2 keys supported with amneziawg-go)" >> "$CONFIG_DIR/$IFACE.conf"
         fi
         text_output "Config added/generated for $IFACE"
         ;;
