@@ -4,47 +4,138 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Amnezia-UI</title>
-    <link rel="stylesheet" href="style.css">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; }
+        input[type="text"], input[type="checkbox"] { width: 100%; max-width: 400px; padding: 8px; }
+        button { padding: 10px 20px; background-color: #4CAF50; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #45a049; }
+        #server-list { margin-top: 20px; }
+    </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Amnezia-UI Dashboard</h1>
-        <div id="status" class="status">Status: <span id="status-text">Disconnected</span></div>
-        
-        <div class="controls">
-            <button onclick="startAmnezia()">Start</button>
-            <button onclick="stopAmnezia()">Stop</button>
-            <button onclick="generateConfig()">Generate Config</button>
+    <h1>Amnezia-UI for ASUSWRT-Merlin</h1>
+    <h2>Add/Generate VPN Config</h2>
+    <form id="config-form">
+        <div class="form-group">
+            <label for="iface">Interface Name:</label>
+            <input type="text" id="iface" name="iface" placeholder="e.g., amnezia0" required>
         </div>
-        
-        <h2>Add Server</h2>
-        <form id="server-form">
-            <label>Interface Name: <input type="text" id="iface" value="amnezia0" required></label><br>
-            <label>Private Key: <input type="text" id="private-key" placeholder="Your WG private key" required></label><br>
-            <label>Public Key (Peer): <input type="text" id="public-key" placeholder="Server public key" required></label><br>
-            <label>Endpoint: <input type="text" id="endpoint" placeholder="server.example.com:51820" required></label><br>
-            <label>Allowed IPs: <input type="text" id="allowed-ips" value="0.0.0.0/0" required></label><br>
-            <label>PreShared Key: <input type="text" id="psk" placeholder="Optional PSK"></label><br>
-            <label>Obfuscation: <input type="checkbox" id="obfs"> Enable Amnezia Obfuscation (Cloak)</label><br>
-            <button type="submit">Add Server</button>
-        </form>
-        
-        <h2>Active Servers</h2>
-        <table id="servers-table">
-            <thead>
-                <tr>
-                    <th>Interface</th>
-                    <th>Endpoint</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                <!-- JS will populate -->
-            </tbody>
-        </table>
-    </div>
-    
-    <script src="script.js"></script>
+        <div class="form-group">
+            <label for="private-key">Private Key:</label>
+            <input type="text" id="private-key" name="private-key" placeholder="Private key" required>
+        </div>
+        <div class="form-group">
+            <label for="public-key">Public Key:</label>
+            <input type="text" id="public-key" name="public-key" placeholder="Server public key" required>
+        </div>
+        <div class="form-group">
+            <label for="endpoint">Endpoint:</label>
+            <input type="text" id="endpoint" name="endpoint" placeholder="e.g., server_ip:51820" required>
+        </div>
+        <div class="form-group">
+            <label for="allowed-ips">Allowed IPs:</label>
+            <input type="text" id="allowed-ips" name="allowed-ips" placeholder="e.g., 0.0.0.0/0" required>
+        </div>
+        <div class="form-group">
+            <label for="psk">Preshared Key (optional):</label>
+            <input type="text" id="psk" name="psk" placeholder="Preshared key">
+        </div>
+        <div class="form-group">
+            <label for="s1">S1 Key (AmneziaWG Obfuscation, optional):</label>
+            <input type="text" id="s1" name="s1" placeholder="32-byte S1 key">
+        </div>
+        <div class="form-group">
+            <label for="s2">S2 Key (AmneziaWG Obfuscation, optional):</label>
+            <input type="text" id="s2" name="s2" placeholder="32-byte S2 key">
+        </div>
+        <div class="form-group">
+            <label for="obfs">Enable Obfuscation:</label>
+            <input type="checkbox" id="obfs" name="obfs">
+        </div>
+        <button type="button" onclick="generateConfig()">Add Config</button>
+    </form>
+
+    <h2>Server List</h2>
+    <div id="server-list"></div>
+
+    <script>
+        function generateConfig() {
+            const formData = new FormData();
+            formData.append("action", "generate");
+            formData.append("iface", document.getElementById("iface").value);
+            formData.append("private-key", document.getElementById("private-key").value);
+            formData.append("public-key", document.getElementById("public-key").value);
+            formData.append("endpoint", document.getElementById("endpoint").value);
+            formData.append("allowed-ips", document.getElementById("allowed-ips").value);
+            formData.append("psk", document.getElementById("psk").value);
+            formData.append("obfs", document.getElementById("obfs").checked ? "on" : "off");
+            formData.append("s1", document.getElementById("s1").value);
+            formData.append("s2", document.getElementById("s2").value);
+
+            fetch("/jffs/scripts/amnezia-ui", {
+                method: "POST",
+                body: formData
+            })
+            .then(response => response.text())
+            .then(data => {
+                alert(data);
+                listServers();
+            })
+            .catch(error => alert("Error: " + error));
+        }
+
+        function listServers() {
+            fetch("/jffs/scripts/amnezia-ui?action=list")
+                .then(response => response.json())
+                .then(data => {
+                    const serverList = document.getElementById("server-list");
+                    serverList.innerHTML = "";
+                    data.forEach(server => {
+                        const div = document.createElement("div");
+                        div.innerHTML = `Interface: ${server.iface}, Endpoint: ${server.endpoint}, Status: ${server.status}
+                            <button onclick="startServer('${server.iface}')">Start</button>
+                            <button onclick="stopServer('${server.iface}')">Stop</button>
+                            <button onclick="deleteServer('${server.iface}')">Delete</button>`;
+                        serverList.appendChild(div);
+                    });
+                })
+                .catch(error => alert("Error listing servers: " + error));
+        }
+
+        function startServer(iface) {
+            fetch(`/jffs/scripts/amnezia-ui?action=start&iface=${iface}`)
+                .then(response => response.text())
+                .then(data => {
+                    alert(data);
+                    listServers();
+                })
+                .catch(error => alert("Error: " + error));
+        }
+
+        function stopServer(iface) {
+            fetch(`/jffs/scripts/amnezia-ui?action=stop&iface=${iface}`)
+                .then(response => response.text())
+                .then(data => {
+                    alert(data);
+                    listServers();
+                })
+                .catch(error => alert("Error: " + error));
+        }
+
+        function deleteServer(iface) {
+            fetch(`/jffs/scripts/amnezia-ui?action=delete&iface=${iface}`)
+                .then(response => response.text())
+                .then(data => {
+                    alert(data);
+                    listServers();
+                })
+                .catch(error => alert("Error: " + error));
+        }
+
+        // Initial load
+        listServers();
+    </script>
 </body>
 </html>
