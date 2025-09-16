@@ -1,12 +1,15 @@
 #!/bin/sh
 
-# Amnezia-UI Script for ASUSWRT-Merlin (adapted from XRAYUI)
+# Amnezia-UI Script for ASUSWRT-Merlin
 # Handles install/uninstall/start/stop + AJAX actions
-# Compatible with Merlin WireGuard, VPN Director, and XRAYUI
+# Compatible with Merlin WireGuard, VPN Director
+# Selective routing via iptables (IP/domains)
+# Full AmneziaWG support (no fallback to wg-quick)
 
-VERSION="0.1.5"
+VERSION="0.1.7"
 CONFIG_DIR="/jffs/amnezia-ui/configs"
 BINARY="/opt/bin/amneziawg-go"
+CUSTOM_DIR="/jffs/amnezia-ui_custom"
 
 # CGI-like parsing for HTTP requests (from JS fetch)
 if [ -n "$QUERY_STRING" ]; then
@@ -26,6 +29,7 @@ elif [ -n "$CONTENT_LENGTH" ]; then
     OBFS=$(echo "$POST_DATA" | sed 's/.*obfs=on.*/1/' | grep -q 1 && echo "true" || echo "false")
     S1=$(echo "$POST_DATA" | sed 's/.*s1=\([^&]*\).*/\1/')
     S2=$(echo "$POST_DATA" | sed 's/.*s2=\([^&]*\).*/\1/')
+    RULES=$(echo "$POST_DATA" | sed 's/.*rules=\([^&]*\).*/\1/')  # Comma-separated IP/domains for selective routing
 fi
 
 # Function to output JSON
@@ -44,21 +48,71 @@ text_output() {
     exit 0
 }
 
-# Check if binary exists, fallback to Merlin WG
+# Check if binary exists, build amneziawg-go or error (no fallback)
 check_binary() {
     if [ ! -x "$BINARY" ]; then
-        # Install if missing (build from source; assume Entware has git/make/go)
+        # Install if missing (build from source; require Entware with git/make/go)
         if [ ! -d /tmp/amneziawg-go ]; then
             opkg update
-            opkg install make golang  # Dependencies for amneziawg-go
+            opkg install make golang ipset  # Dependencies for amneziawg-go and selective routing
             cd /tmp && git clone https://github.com/amnezia-vpn/amneziawg-go && cd amneziawg-go && make
             cp amneziawg-go $BINARY && chmod +x $BINARY
+            rm -rf /tmp/amneziawg-go  # Cleanup
         fi
-        # Fallback: use Merlin's wg-quick if build fails
+        # Error if build failed (no fallback to wg-quick for full AmneziaWG)
         if [ ! -x "$BINARY" ]; then
-            BINARY="/usr/sbin/wg-quick"  # Merlin built-in WireGuard
-            echo "Warning: Using Merlin's standard WG (no AmneziaWG S1/S2 obfs; add manual)"
+            echo "Failed to build amneziawg-go. Install make and golang via opkg (opkg install make golang), check /opt space (df -h /opt), and try again."
+            exit 1
         fi
+    fi
+}
+
+# Function to generate custom firewall script for selective routing (iptables + dnsmasq for domains)
+generate_firewall_script() {
+    if [ -n "$RULES" ]; then
+        FIREWALL_SCRIPT="$CUSTOM_DIR/firewall_client"
+        CLEANUP_SCRIPT="$CUSTOM_DIR/firewall_cleanup"
+        DNSMASQ_CONF="$CUSTOM_DIR/dnsmasq_rules.conf"
+
+        # Generate firewall_client
+        echo "#!/bin/sh" > "$FIREWALL_SCRIPT"
+        echo "# Selective routing for AmneziaWG ($IFACE)" >> "$FIREWALL_SCRIPT"
+        echo "iptables -t mangle -N AMNEZIA-MARK" >> "$FIREWALL_SCRIPT"
+        echo "iptables -t mangle -A AMNEZIA-MARK -j MARK --set-mark 0x80000" >> "$FIREWALL_SCRIPT"
+        for rule in $(echo "$RULES" | tr ',' ' '); do
+            if [ -n "$rule" ]; then
+                # Check if rule is IP/CIDR or domain
+                if echo "$rule" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?$'; then
+                    echo "iptables -t mangle -A AMNEZIA-MARK -d $rule -j MARK --set-mark 0x80000" >> "$FIREWALL_SCRIPT"
+                else
+                    # Domain: add to dnsmasq for resolution
+                    echo "address=/$rule/0.0.0.0" >> "$DNSMASQ_CONF"
+                    echo "ipset=/$rule/amnezia_vpn" >> "$DNSMASQ_CONF"
+                    echo "iptables -t mangle -A AMNEZIA-MARK -m set --match-set amnezia_vpn dst -j MARK --set-mark 0x80000" >> "$FIREWALL_SCRIPT"
+                fi
+            fi
+        done
+        echo "iptables -t mangle -A OUTPUT -j AMNEZIA-MARK" >> "$FIREWALL_SCRIPT"
+        echo "iptables -t mangle -A PREROUTING -j AMNEZIA-MARK" >> "$FIREWALL_SCRIPT"
+        echo "ip rule add fwmark 0x80000 table 100" >> "$FIREWALL_SCRIPT"
+        echo "ip route add local 0.0.0.0/0 dev $IFACE table 100" >> "$FIREWALL_SCRIPT"
+        echo "ipset create amnezia_vpn hash:ip" >> "$FIREWALL_SCRIPT"
+        echo "service restart_dnsmasq" >> "$FIREWALL_SCRIPT"
+        chmod +x "$FIREWALL_SCRIPT"
+
+        # Generate firewall_cleanup
+        echo "#!/bin/sh" > "$CLEANUP_SCRIPT"
+        echo "# Cleanup selective routing for AmneziaWG ($IFACE)" >> "$CLEANUP_SCRIPT"
+        echo "ip route del local 0.0.0.0/0 dev $IFACE table 100" >> "$CLEANUP_SCRIPT"
+        echo "ip rule del fwmark 0x80000 table 100" >> "$CLEANUP_SCRIPT"
+        echo "iptables -t mangle -D OUTPUT -j AMNEZIA-MARK" >> "$CLEANUP_SCRIPT"
+        echo "iptables -t mangle -D PREROUTING -j AMNEZIA-MARK" >> "$CLEANUP_SCRIPT"
+        echo "iptables -t mangle -F AMNEZIA-MARK" >> "$CLEANUP_SCRIPT"
+        echo "iptables -t mangle -X AMNEZIA-MARK" >> "$CLEANUP_SCRIPT"
+        echo "ipset destroy amnezia_vpn" >> "$CLEANUP_SCRIPT"
+        echo "rm -f $DNSMASQ_CONF" >> "$CLEANUP_SCRIPT"
+        echo "service restart_dnsmasq" >> "$CLEANUP_SCRIPT"
+        chmod +x "$CLEANUP_SCRIPT"
     fi
 }
 
@@ -92,24 +146,18 @@ case "$1" in
         # This script itself (already mv'ed in install command)
         chmod 0755 /jffs/scripts/amnezia-ui
 
-        # Check/Install AmneziaWG (use Merlin WG as fallback)
+        # Check/Install AmneziaWG (full, no fallback)
         check_binary
 
-        # Setup cron for auto-start (coexist with XRAYUI or others)
-        if [ -f /jffs/scripts/xrayui ]; then
-            echo "Coexisting with XRAYUI detected — adding Amnezia-UI cron entry"
-        fi
+        # Setup cron for auto-start (coexist with other addons)
         if ! grep -q "amnezia-ui" /var/spool/cron/crontabs/admin; then
             echo "*/2 * * * * /jffs/scripts/amnezia-ui start" >> /var/spool/cron/crontabs/admin
         fi
 
-        # Add to services-start if not present (coexist with XRAYUI or others)
+        # Add to services-start if not present
         if [ ! -f /jffs/scripts/services-start ]; then
             touch /jffs/scripts/services-start
             chmod 0755 /jffs/scripts/services-start
-        fi
-        if [ -f /jffs/scripts/xrayui ]; then
-            echo "Coexisting with XRAYUI detected — adding Amnezia-UI services entry"
         fi
         if ! grep -q "amnezia-ui" /jffs/scripts/services-start; then
             echo "/jffs/scripts/amnezia-ui start" >> /jffs/scripts/services-start
@@ -137,10 +185,10 @@ case "$1" in
         ;;
 
     start)
-        check_binary
+        check_binary  # Ensure amneziawg-go is built
         if [ -f "$CONFIG_DIR/$IFACE.conf" ]; then
             $BINARY up $IFACE
-            # Apply custom firewall (separate from XRAYUI/Merlin WG)
+            # Apply custom firewall (separate from Merlin WG)
             [ -x /jffs/amnezia-ui_custom/firewall_client ] && /jffs/amnezia-ui_custom/firewall_client
             service restart_httpd
             text_output "Started"
@@ -150,16 +198,16 @@ case "$1" in
         ;;
 
     stop)
-        check_binary
+        check_binary  # Ensure amneziawg-go is built
         $BINARY down $IFACE 2>/dev/null
-        # Apply custom firewall cleanup (separate from XRAYUI/Merlin WG)
+        # Apply custom firewall cleanup (separate from Merlin WG)
         [ -x /jffs/amnezia-ui_custom/firewall_cleanup ] && /jffs/amnezia-ui_custom/firewall_cleanup
         service restart_httpd
         text_output "Stopped"
         ;;
 
     status)
-        check_binary
+        check_binary  # Ensure amneziawg-go is built
         if $BINARY show $IFACE >/dev/null 2>&1; then
             text_output "Connected"
         else
@@ -168,7 +216,7 @@ case "$1" in
         ;;
 
     list)
-        check_binary
+        check_binary  # Ensure amneziawg-go is built
         SERVERS='[]'
         for conf in $CONFIG_DIR/*.conf; do
             if [ -f "$conf" ]; then
@@ -182,7 +230,7 @@ case "$1" in
         ;;
 
     add|generate)
-        check_binary
+        check_binary  # Ensure amneziawg-go is built
         mkdir -p $CONFIG_DIR
         cat > "$CONFIG_DIR/$IFACE.conf" << EOF
 [Interface]
@@ -199,17 +247,20 @@ ${PSK:+PresharedKey = $PSK}
 ${S1:+S1 = $S1}
 ${S2:+S2 = $S2}
 EOF
-        if [ "$OBFS" = "true" ] && [ "$BINARY" = "/usr/sbin/wg-quick" ]; then
-            # Only add iptables if using wg-quick (amneziawg-go handles obfs natively)
-            echo "PostUp = iptables -t mangle -A OUTPUT -p udp --dport 51820 -j TCPMSS --clamp-mss-to-pmtu" >> "$CONFIG_DIR/$IFACE.conf"
-            echo "# Amnezia Obfuscation enabled (S1/S2 keys supported with amneziawg-go)" >> "$CONFIG_DIR/$IFACE.conf"
+        if [ "$OBFS" = "true" ]; then
+            echo "# Amnezia Obfuscation enabled (S1/S2 keys supported)" >> "$CONFIG_DIR/$IFACE.conf"
         fi
+        # Generate selective routing rules (iptables + dnsmasq)
+        generate_firewall_script
         text_output "Config added/generated for $IFACE"
         ;;
 
     delete)
+        check_binary  # Ensure amneziawg-go is built
         rm -f "$CONFIG_DIR/$IFACE.conf"
         $BINARY down $IFACE 2>/dev/null
+        # Cleanup selective routing
+        [ -x /jffs/amnezia-ui_custom/firewall_cleanup ] && /jffs/amnezia-ui_custom/firewall_cleanup
         text_output "Deleted"
         ;;
 
