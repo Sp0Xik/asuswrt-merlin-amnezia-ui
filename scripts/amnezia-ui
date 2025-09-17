@@ -6,7 +6,7 @@
 # Selective routing via iptables (IP/domains)
 # Full AmneziaWG support (no fallback to wg-quick)
 
-VERSION="0.1.12"
+VERSION="0.1.13"
 CONFIG_DIR="/jffs/amnezia-ui/configs"
 BINARY="/opt/bin/amneziawg-go"
 CUSTOM_DIR="/jffs/amnezia-ui_custom"
@@ -140,6 +140,7 @@ generate_firewall_script() {
 
 case "$1" in
     install)
+        echo "Starting installation (v$VERSION)..." | tee -a "$INSTALL_LOG"
         if [ ! -d /jffs ] || ! touch /jffs/.amnezia-test 2>/dev/null; then
             echo "JFFS not enabled or not writable. Enable JFFS in Administration > System and reboot." | tee -a "$INSTALL_LOG"
             echo "Debug: ls /jffs/ = $(ls /jffs/ 2>/dev/null); df = $(df -h | grep jffs)" | tee -a "$INSTALL_LOG"
@@ -157,35 +158,50 @@ case "$1" in
         mkdir -p /jffs/scripts
         mkdir -p $CONFIG_DIR
 
-        # Copy files, support multiple possible archive structures
-        echo "Checking archive structure in /jffs/addons/amnezia-ui:" | tee -a "$INSTALL_LOG"
-        ls -lR /jffs/addons/amnezia-ui/ >> "$INSTALL_LOG" 2>&1
-        if [ -f /jffs/addons/amnezia-ui/amnezia-ui ]; then
-            mv /jffs/addons/amnezia-ui/amnezia-ui /jffs/scripts/amnezia-ui
-            echo "Moved /jffs/addons/amnezia-ui/amnezia-ui to /jffs/scripts/amnezia-ui" | tee -a "$INSTALL_LOG"
-        elif [ -f /jffs/addons/amnezia-ui/scripts/amnezia-ui ]; then
-            mv /jffs/addons/amnezia-ui/scripts/amnezia-ui /jffs/scripts/amnezia-ui
-            echo "Moved /jffs/addons/amnezia-ui/scripts/amnezia-ui to /jffs/scripts/amnezia-ui" | tee -a "$INSTALL_LOG"
-        else
-            echo "Error: amnezia-ui script not found in /jffs/addons/amnezia-ui/ or /jffs/addons/amnezia-ui/scripts/. Check archive structure (tar -tzf /tmp/asuswrt-merlin-amnezia-ui.tar.gz)." | tee -a "$INSTALL_LOG"
+        # Simplified install logic (like pre-0.1.9)
+        echo "Checking for /jffs/addons/amnezia-ui/amnezia-ui..." | tee -a "$INSTALL_LOG"
+        if [ ! -f /jffs/addons/amnezia-ui/amnezia-ui ]; then
+            echo "Error: /jffs/addons/amnezia-ui/amnezia-ui not found. Check archive (tar -tzf /tmp/asuswrt-merlin-amnezia-ui.tar.gz)." | tee -a "$INSTALL_LOG"
+            echo "Debug: ls -lR /jffs/addons/amnezia-ui/ = $(ls -lR /jffs/addons/amnezia-ui/ 2>/dev/null)" | tee -a "$INSTALL_LOG"
+            exit 1
+        fi
+        echo "Moving /jffs/addons/amnezia-ui/amnezia-ui to /jffs/scripts/amnezia-ui..." | tee -a "$INSTALL_LOG"
+        mv /jffs/addons/amnezia-ui/amnezia-ui /jffs/scripts/amnezia-ui 2>>"$INSTALL_LOG"
+        if [ $? -ne 0 ] || [ ! -f /jffs/scripts/amnezia-ui ]; then
+            echo "Error: Failed to move /jffs/addons/amnezia-ui/amnezia-ui to /jffs/scripts/amnezia-ui or file not found after move." | tee -a "$INSTALL_LOG"
+            echo "Debug: ls -l /jffs/scripts/amnezia-ui = $(ls -l /jffs/scripts/amnezia-ui 2>/dev/null)" | tee -a "$INSTALL_LOG"
             exit 1
         fi
         chmod 0755 /jffs/scripts/amnezia-ui || { echo "Error: Failed to set executable permissions on /jffs/scripts/amnezia-ui" | tee -a "$INSTALL_LOG"; exit 1; }
-        cp -r /jffs/addons/amnezia-ui/www /www/user/amnezia-ui >> "$INSTALL_LOG" 2>&1
-        cp -r /jffs/addons/amnezia-ui/configs /jffs/amnezia-ui/ >> "$INSTALL_LOG" 2>&1
+        echo "Copying /jffs/addons/amnezia-ui/www to /www/user/amnezia-ui..." | tee -a "$INSTALL_LOG"
+        cp -r /jffs/addons/amnezia-ui/www /www/user/amnezia-ui 2>>"$INSTALL_LOG"
+        if [ $? -ne 0 ]; then
+            echo "Error: Failed to copy /jffs/addons/amnezia-ui/www to /www/user/amnezia-ui" | tee -a "$INSTALL_LOG"
+            exit 1
+        fi
+        echo "Copying /jffs/addons/amnezia-ui/configs to /jffs/amnezia-ui/..." | tee -a "$INSTALL_LOG"
+        cp -r /jffs/addons/amnezia-ui/configs /jffs/amnezia-ui/ 2>>"$INSTALL_LOG"
+        if [ $? -ne 0 ]; then
+            echo "Error: Failed to copy /jffs/addons/amnezia-ui/configs to /jffs/amnezia-ui/" | tee -a "$INSTALL_LOG"
+            exit 1
+        fi
+        echo "Removing temporary directory /jffs/addons/amnezia-ui..." | tee -a "$INSTALL_LOG"
         rm -rf /jffs/addons/amnezia-ui
 
         check_binary
 
         if ! grep -q "amnezia-ui" /var/spool/cron/crontabs/admin; then
+            echo "Adding cron job for /jffs/scripts/amnezia-ui start..." | tee -a "$INSTALL_LOG"
             echo "*/2 * * * * /jffs/scripts/amnezia-ui start" >> /var/spool/cron/crontabs/admin
         fi
 
         if [ ! -f /jffs/scripts/services-start ]; then
+            echo "Creating /jffs/scripts/services-start..." | tee -a "$INSTALL_LOG"
             touch /jffs/scripts/services-start
             chmod 0755 /jffs/scripts/services-start
         fi
         if ! grep -q "amnezia-ui" /jffs/scripts/services-start; then
+            echo "Adding /jffs/scripts/amnezia-ui start to /jffs/scripts/services-start..." | tee -a "$INSTALL_LOG"
             echo "/jffs/scripts/amnezia-ui start" >> /jffs/scripts/services-start
         fi
 
