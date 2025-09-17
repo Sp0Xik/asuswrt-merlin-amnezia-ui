@@ -153,35 +153,20 @@ case "$1" in
             exit 1
         fi
 
-        mkdir -p /jffs/addons/amnezia-ui
         mkdir -p /jffs/amnezia-ui_custom
         mkdir -p /jffs/scripts
         mkdir -p $CONFIG_DIR
 
-        # Simplified install logic (like pre-0.1.9)
-        echo "Checking for /jffs/addons/amnezia-ui/amnezia-ui..." | tee -a "$INSTALL_LOG"
-        if [ ! -f /jffs/addons/amnezia-ui/amnezia-ui ]; then
-            echo "Error: /jffs/addons/amnezia-ui/amnezia-ui not found. Check archive (tar -tzf /tmp/asuswrt-merlin-amnezia-ui.tar.gz)." | tee -a "$INSTALL_LOG"
-            echo "Debug: ls -lR /jffs/addons/amnezia-ui/ = $(ls -lR /jffs/addons/amnezia-ui/ 2>/dev/null)" | tee -a "$INSTALL_LOG"
-            exit 1
-        fi
-        echo "Moving /jffs/addons/amnezia-ui/amnezia-ui to /jffs/scripts/amnezia-ui..." | tee -a "$INSTALL_LOG"
-        mv /jffs/addons/amnezia-ui/amnezia-ui /jffs/scripts/amnezia-ui 2>>"$INSTALL_LOG"
-        if [ $? -ne 0 ] || [ ! -f /jffs/scripts/amnezia-ui ]; then
-            echo "Error: Failed to move /jffs/addons/amnezia-ui/amnezia-ui to /jffs/scripts/amnezia-ui or file not found after move." | tee -a "$INSTALL_LOG"
-            echo "Debug: ls -l /jffs/scripts/amnezia-ui = $(ls -l /jffs/scripts/amnezia-ui 2>/dev/null)" | tee -a "$INSTALL_LOG"
-            exit 1
-        fi
-        chmod 0755 /jffs/scripts/amnezia-ui || { echo "Error: Failed to set executable permissions on /jffs/scripts/amnezia-ui" | tee -a "$INSTALL_LOG"; exit 1; }
+        # Simple copy from /jffs/addons/amnezia-ui (assume tar extracted there)
         echo "Copying /jffs/addons/amnezia-ui/www to /www/user/amnezia-ui..." | tee -a "$INSTALL_LOG"
         cp -r /jffs/addons/amnezia-ui/www /www/user/amnezia-ui 2>>"$INSTALL_LOG"
-        if [ $? -ne 0 ]; then
+        if [ $? -ne 0 ] || [ ! -d /www/user/amnezia-ui ]; then
             echo "Error: Failed to copy /jffs/addons/amnezia-ui/www to /www/user/amnezia-ui" | tee -a "$INSTALL_LOG"
             exit 1
         fi
         echo "Copying /jffs/addons/amnezia-ui/configs to /jffs/amnezia-ui/..." | tee -a "$INSTALL_LOG"
         cp -r /jffs/addons/amnezia-ui/configs /jffs/amnezia-ui/ 2>>"$INSTALL_LOG"
-        if [ $? -ne 0 ]; then
+        if [ $? -ne 0 ] || [ ! -d /jffs/amnezia-ui ]; then
             echo "Error: Failed to copy /jffs/addons/amnezia-ui/configs to /jffs/amnezia-ui/" | tee -a "$INSTALL_LOG"
             exit 1
         fi
