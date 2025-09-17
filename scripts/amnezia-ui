@@ -4,9 +4,9 @@
 # Handles install/uninstall/start/stop + AJAX actions
 # Compatible with Merlin WireGuard, VPN Director
 # Selective routing via iptables (IP/domains)
-# Full AmneziaWG support (no fallback to wg-quick)
+# Full AmneziaWG support (compiles amneziawg-go, removes build dependencies)
 
-VERSION="0.1.14"
+VERSION="0.1.18"
 CONFIG_DIR="/jffs/amnezia-ui/configs"
 BINARY="/opt/bin/amneziawg-go"
 CUSTOM_DIR="/jffs/amnezia-ui_custom"
@@ -46,36 +46,63 @@ text_output() {
     exit 0
 }
 
-# Check if binary exists, build amneziawg-go or error (no fallback)
+# Check if binary exists, compile amneziawg-go or error
 check_binary() {
     if [ ! -x "$BINARY" ]; then
-        opkg update >> "$INSTALL_LOG" 2>&1
-        # Install only missing dependencies
-        opkg list-installed | grep -q make || opkg install make >> "$INSTALL_LOG" 2>&1
-        opkg list-installed | grep -q '^go ' || opkg install go >> "$INSTALL_LOG" 2>&1 || { echo "Cannot install go. Check Entware repository or try 'opkg install go' manually." | tee -a "$INSTALL_LOG"; exit 1; }
-        opkg list-installed | grep -q ipset || opkg install ipset >> "$INSTALL_LOG" 2>&1
-        opkg list-installed | grep -q git || opkg install git >> "$INSTALL_LOG" 2>&1
+        opkg update >> "$INSTALL_LOG" 2>&1 || { echo "Failed to update opkg. Check Entware repository." | tee -a "$INSTALL_LOG"; exit 1; }
+        # Install build dependencies
+        for pkg in make go git; do
+            opkg list-installed | grep -q "^$pkg " || { echo "Installing $pkg for compilation..." | tee -a "$INSTALL_LOG"; opkg install "$pkg" >> "$INSTALL_LOG" 2>&1 || { echo "Cannot install $pkg. Check Entware repository or try 'opkg install $pkg' manually." | tee -a "$INSTALL_LOG"; exit 1; }; }
+        done
+        # Install runtime dependencies
+        for pkg in ipset jq; do
+            opkg list-installed | grep -q "^$pkg " || { echo "Installing $pkg for runtime..." | tee -a "$INSTALL_LOG"; opkg install "$pkg" >> "$INSTALL_LOG" 2>&1 || { echo "Cannot install $pkg. Check Entware repository or try 'opkg install $pkg' manually." | tee -a "$INSTALL_LOG"; exit 1; }; }
+        done
         echo "Checking /opt space:" | tee -a "$INSTALL_LOG"
-        df -h /opt | tee -a "$INSTALL_LOG"
-        # Check for at least 50MB free (in MB or GB)
-        FREE_SPACE=$(df /opt | awk 'NR==2 {print $4}')
-        FREE_SPACE_MB=$(echo "$FREE_SPACE" | sed 's/[MG]//')
-        UNIT=$(echo "$FREE_SPACE" | sed 's/[0-9.]*//')
-        if [ "$UNIT" = "G" ]; then
-            FREE_SPACE_MB=$(echo "$FREE_SPACE_MB * 1024" | bc)
-        fi
-        if [ -z "$FREE_SPACE_MB" ] || [ $(echo "$FREE_SPACE_MB < 50" | bc) -eq 1 ]; then
-            echo "Insufficient space in /opt. Free up ~50MB (available: ${FREE_SPACE:-0}${UNIT:-MB})." | tee -a "$INSTALL_LOG"
+        df -k /opt | tee -a "$INSTALL_LOG"
+        FREE_SPACE_KB=$(df -k /opt | awk 'NR==2 {print $4}')
+        if [ -z "$FREE_SPACE_KB" ] || [ "$FREE_SPACE_KB" -lt 52480 ]; then
+            echo "Insufficient space in /opt. Free up ~50MB (available: ${FREE_SPACE_KB:-0}KB). Run 'df -h /opt' and free up space." | tee -a "$INSTALL_LOG"
             exit 1
         fi
-        echo "Available space: ${FREE_SPACE}${UNIT} (${FREE_SPACE_MB}MB)" | tee -a "$INSTALL_LOG"
-        cd /tmp && git clone https://github.com/amnezia-vpn/amneziawg-go >> "$INSTALL_LOG" 2>&1 && cd amneziawg-go && make >> "$INSTALL_LOG" 2>&1
+        echo "Available space: $FREE_SPACE_KB KB" | tee -a "$INSTALL_LOG"
+        cd /tmp || { echo "Failed to change to /tmp directory." | tee -a "$INSTALL_LOG"; exit 1; }
+        git clone https://github.com/amnezia-vpn/amneziawg-go >> "$INSTALL_LOG" 2>&1
+        if [ $? -ne 0 ]; then
+            echo "Failed to clone amneziawg-go repository. Check network or GitHub availability." | tee -a "$INSTALL_LOG"
+            exit 1
+        fi
+        cd amneziawg-go || { echo "Failed to change to amneziawg-go directory." | tee -a "$INSTALL_LOG"; exit 1; }
+        make >> "$INSTALL_LOG" 2>&1
+        if [ $? -ne 0 ]; then
+            echo "Failed to build amneziawg-go. Check $INSTALL_LOG for make errors." | tee -a "$INSTALL_LOG"
+            exit 1
+        fi
+        if [ ! -f amneziawg-go ]; then
+            echo "Build succeeded but amneziawg-go binary not found. Check repository or build process." | tee -a "$INSTALL_LOG"
+            exit 1
+        fi
         cp amneziawg-go $BINARY && chmod +x $BINARY
+        if [ $? -ne 0 ]; then
+            echo "Failed to copy amneziawg-go to $BINARY. Check permissions or disk space." | tee -a "$INSTALL_LOG"
+            exit 1
+        fi
         rm -rf /tmp/amneziawg-go
         if [ ! -x "$BINARY" ]; then
-            echo "Failed to build amneziawg-go. Check $INSTALL_LOG, ensure make, go, ipset, git are installed via opkg, check /opt space (df -h /opt)." | tee -a "$INSTALL_LOG"
+            echo "Failed to build amneziawg-go. Check $INSTALL_LOG, ensure make, go, git are installed via opkg, check /opt space (df -h /opt)." | tee -a "$INSTALL_LOG"
             exit 1
         fi
+        # Remove build dependencies if not used by other addons
+        for pkg in make go git; do
+            if opkg list-installed | grep -q "^$pkg "; then
+                if check_package_usage "$pkg"; then
+                    echo "Removing $pkg (used only for compilation)..." | tee -a "$INSTALL_LOG"
+                    opkg remove --autoremove "$pkg" >> "$INSTALL_LOG" 2>&1
+                else
+                    echo "Keeping $pkg (used by other addons/Merlin)." | tee -a "$INSTALL_LOG"
+                fi
+            fi
+        done
     fi
 }
 
@@ -90,12 +117,12 @@ check_package_usage() {
     fi
     # Check for Merlin VPN Director or other addons using ipset
     if [ "$pkg" = "ipset" ] && nvram get vpndirector_rulelist | grep -q .; then
-        echo "ipset used by VPN Director (nvram vpndirector_rulelist). Skipping removal." | tee -a "$UNINSTALL_LOG"
+        echo "ipset used by VPN Director (nvram vpndirector_rulelist). Skipping removal." >> "$UNINSTALL_LOG"
         return 1
     fi
-    # Check for scripts/addons using go or git
-    if [ "$pkg" = "go" ] || [ "$pkg" = "git" ]; then
-        if find /jffs/scripts /jffs/addons -type f -exec grep -qE "go |git " {} \; 2>/dev/null; then
+    # Check for scripts/addons using make, go, git, or jq
+    if [ "$pkg" = "make" ] || [ "$pkg" = "go" ] || [ "$pkg" = "git" ] || [ "$pkg" = "jq" ]; then
+        if find /jffs/scripts /jffs/addons -type f -exec grep -qE "$pkg " {} \; 2>/dev/null; then
             echo "$pkg used by other scripts/addons in /jffs/scripts or /jffs/addons. Skipping removal." >> "$UNINSTALL_LOG"
             return 1
         fi
@@ -181,10 +208,9 @@ case "$1" in
             echo "Error: Failed to copy /jffs/addons/amnezia-ui/configs to /jffs/amnezia-ui/" | tee -a "$INSTALL_LOG"
             exit 1
         fi
+        check_binary
         echo "Removing temporary directory /jffs/addons/amnezia-ui..." | tee -a "$INSTALL_LOG"
         rm -rf /jffs/addons/amnezia-ui
-
-        check_binary
 
         if ! grep -q "amnezia-ui" /var/spool/cron/crontabs/admin; then
             echo "Adding cron job for /jffs/scripts/amnezia-ui start..." | tee -a "$INSTALL_LOG"
@@ -216,7 +242,7 @@ case "$1" in
         sed -i '/amnezia-ui/d' /jffs/scripts/services-start
 
         # Remove dependencies if not used by other addons or Merlin
-        for pkg in make go ipset git; do
+        for pkg in ipset jq make go git; do
             if opkg list-installed | grep -q "^$pkg "; then
                 if check_package_usage "$pkg"; then
                     echo "Removing $pkg..." >> "$UNINSTALL_LOG"
