@@ -6,18 +6,16 @@
 # Selective routing via iptables (IP/domains)
 # Full AmneziaWG support (no fallback to wg-quick)
 
-VERSION="0.1.7"
+VERSION="0.1.8"
 CONFIG_DIR="/jffs/amnezia-ui/configs"
 BINARY="/opt/bin/amneziawg-go"
 CUSTOM_DIR="/jffs/amnezia-ui_custom"
 
 # CGI-like parsing for HTTP requests (from JS fetch)
 if [ -n "$QUERY_STRING" ]; then
-    # GET params: action=xxx&iface=yyy
     ACTION=$(echo "$QUERY_STRING" | sed 's/.*action=\([^&]*\).*/\1/')
     IFACE=$(echo "$QUERY_STRING" | sed 's/.*iface=\([^&]*\).*/\1/')
 elif [ -n "$CONTENT_LENGTH" ]; then
-    # POST form data
     read -r POST_DATA <&0
     ACTION=$(echo "$POST_DATA" | sed 's/.*action=\([^&]*\).*/\1/')
     IFACE=$(echo "$POST_DATA" | sed 's/.*iface=\([^&]*\).*/\1/')
@@ -29,10 +27,9 @@ elif [ -n "$CONTENT_LENGTH" ]; then
     OBFS=$(echo "$POST_DATA" | sed 's/.*obfs=on.*/1/' | grep -q 1 && echo "true" || echo "false")
     S1=$(echo "$POST_DATA" | sed 's/.*s1=\([^&]*\).*/\1/')
     S2=$(echo "$POST_DATA" | sed 's/.*s2=\([^&]*\).*/\1/')
-    RULES=$(echo "$POST_DATA" | sed 's/.*rules=\([^&]*\).*/\1/')  # Comma-separated IP/domains for selective routing
+    RULES=$(echo "$POST_DATA" | sed 's/.*rules=\([^&]*\).*/\1/')
 fi
 
-# Function to output JSON
 json_output() {
     echo "Content-Type: application/json"
     echo ""
@@ -40,7 +37,6 @@ json_output() {
     exit 0
 }
 
-# Function to output text
 text_output() {
     echo "Content-Type: text/plain"
     echo ""
@@ -51,17 +47,18 @@ text_output() {
 # Check if binary exists, build amneziawg-go or error (no fallback)
 check_binary() {
     if [ ! -x "$BINARY" ]; then
-        # Install if missing (build from source; require Entware with git/make/go)
-        if [ ! -d /tmp/amneziawg-go ]; then
-            opkg update
-            opkg install make golang ipset  # Dependencies for amneziawg-go and selective routing
-            cd /tmp && git clone https://github.com/amnezia-vpn/amneziawg-go && cd amneziawg-go && make
-            cp amneziawg-go $BINARY && chmod +x $BINARY
-            rm -rf /tmp/amneziawg-go  # Cleanup
-        fi
-        # Error if build failed (no fallback to wg-quick for full AmneziaWG)
+        opkg update
+        # Install only missing dependencies
+        opkg list-installed | grep -q make || opkg install make
+        opkg list-installed | grep -q golang || opkg install golang
+        opkg list-installed | grep -q ipset || opkg install ipset
+        opkg list-installed | grep -q git || opkg install git
+        df -h /opt | grep -q "Avail.*[1-9][0-9]*M" || { echo "Insufficient space in /opt. Free up ~100MB (df -h /opt) and try again."; exit 1; }
+        cd /tmp && git clone https://github.com/amnezia-vpn/amneziawg-go && cd amneziawg-go && make > /tmp/amneziawg-build.log 2>&1
+        cp amneziawg-go $BINARY && chmod +x $BINARY
+        rm -rf /tmp/amneziawg-go
         if [ ! -x "$BINARY" ]; then
-            echo "Failed to build amneziawg-go. Install make and golang via opkg (opkg install make golang), check /opt space (df -h /opt), and try again."
+            echo "Failed to build amneziawg-go. Check /tmp/amneziawg-build.log, ensure make, golang, ipset, git are installed via opkg, check /opt space (df -h /opt)."
             exit 1
         fi
     fi
@@ -74,18 +71,15 @@ generate_firewall_script() {
         CLEANUP_SCRIPT="$CUSTOM_DIR/firewall_cleanup"
         DNSMASQ_CONF="$CUSTOM_DIR/dnsmasq_rules.conf"
 
-        # Generate firewall_client
         echo "#!/bin/sh" > "$FIREWALL_SCRIPT"
         echo "# Selective routing for AmneziaWG ($IFACE)" >> "$FIREWALL_SCRIPT"
         echo "iptables -t mangle -N AMNEZIA-MARK" >> "$FIREWALL_SCRIPT"
         echo "iptables -t mangle -A AMNEZIA-MARK -j MARK --set-mark 0x80000" >> "$FIREWALL_SCRIPT"
         for rule in $(echo "$RULES" | tr ',' ' '); do
             if [ -n "$rule" ]; then
-                # Check if rule is IP/CIDR or domain
                 if echo "$rule" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?$'; then
                     echo "iptables -t mangle -A AMNEZIA-MARK -d $rule -j MARK --set-mark 0x80000" >> "$FIREWALL_SCRIPT"
                 else
-                    # Domain: add to dnsmasq for resolution
                     echo "address=/$rule/0.0.0.0" >> "$DNSMASQ_CONF"
                     echo "ipset=/$rule/amnezia_vpn" >> "$DNSMASQ_CONF"
                     echo "iptables -t mangle -A AMNEZIA-MARK -m set --match-set amnezia_vpn dst -j MARK --set-mark 0x80000" >> "$FIREWALL_SCRIPT"
@@ -96,11 +90,10 @@ generate_firewall_script() {
         echo "iptables -t mangle -A PREROUTING -j AMNEZIA-MARK" >> "$FIREWALL_SCRIPT"
         echo "ip rule add fwmark 0x80000 table 100" >> "$FIREWALL_SCRIPT"
         echo "ip route add local 0.0.0.0/0 dev $IFACE table 100" >> "$FIREWALL_SCRIPT"
-        echo "ipset create amnezia_vpn hash:ip" >> "$FIREWALL_SCRIPT"
+        echo "ipset list amnezia_vpn 2>/dev/null || ipset create amnezia_vpn hash:ip" >> "$FIREWALL_SCRIPT"
         echo "service restart_dnsmasq" >> "$FIREWALL_SCRIPT"
         chmod +x "$FIREWALL_SCRIPT"
 
-        # Generate firewall_cleanup
         echo "#!/bin/sh" > "$CLEANUP_SCRIPT"
         echo "# Cleanup selective routing for AmneziaWG ($IFACE)" >> "$CLEANUP_SCRIPT"
         echo "ip route del local 0.0.0.0/0 dev $IFACE table 100" >> "$CLEANUP_SCRIPT"
@@ -109,7 +102,7 @@ generate_firewall_script() {
         echo "iptables -t mangle -D PREROUTING -j AMNEZIA-MARK" >> "$CLEANUP_SCRIPT"
         echo "iptables -t mangle -F AMNEZIA-MARK" >> "$CLEANUP_SCRIPT"
         echo "iptables -t mangle -X AMNEZIA-MARK" >> "$CLEANUP_SCRIPT"
-        echo "ipset destroy amnezia_vpn" >> "$CLEANUP_SCRIPT"
+        echo "ipset destroy amnezia_vpn 2>/dev/null" >> "$CLEANUP_SCRIPT"
         echo "rm -f $DNSMASQ_CONF" >> "$CLEANUP_SCRIPT"
         echo "service restart_dnsmasq" >> "$CLEANUP_SCRIPT"
         chmod +x "$CLEANUP_SCRIPT"
@@ -118,43 +111,34 @@ generate_firewall_script() {
 
 case "$1" in
     install)
-        # Check JFFS (more robust: check dir + writability)
         if [ ! -d /jffs ] || ! touch /jffs/.amnezia-test 2>/dev/null; then
             echo "JFFS not enabled or not writable. Enable JFFS in Administration > System and reboot."
             echo "Debug: ls /jffs/ = $(ls /jffs/ 2>/dev/null); df = $(df -h | grep jffs)"
             exit 1
         fi
-        rm -f /jffs/.amnezia-test  # Cleanup test file
+        rm -f /jffs/.amnezia-test
 
         if [ ! -d /opt ]; then
             echo "Entware not installed. Run 'amtm' in SSH and install Entware, then try again."
             exit 1
         fi
 
-        # Create directories
         mkdir -p /jffs/addons/amnezia-ui
         mkdir -p /jffs/amnezia-ui_custom
         mkdir -p /jffs/scripts
         mkdir -p $CONFIG_DIR
 
-        # Copy files from extracted dir (after tar to /jffs/addons/amnezia-ui)
         cp -r /jffs/addons/amnezia-ui/www /www/user/amnezia-ui
-        cp -r /jffs/addons/amnezia-ui/configs /jffs/amnezia-ui/  # Optional, for examples
-        # Cleanup after copy
+        cp -r /jffs/addons/amnezia-ui/configs /jffs/amnezia-ui/
         rm -rf /jffs/addons/amnezia-ui
 
-        # This script itself (already mv'ed in install command)
         chmod 0755 /jffs/scripts/amnezia-ui
-
-        # Check/Install AmneziaWG (full, no fallback)
         check_binary
 
-        # Setup cron for auto-start (coexist with other addons)
         if ! grep -q "amnezia-ui" /var/spool/cron/crontabs/admin; then
             echo "*/2 * * * * /jffs/scripts/amnezia-ui start" >> /var/spool/cron/crontabs/admin
         fi
 
-        # Add to services-start if not present
         if [ ! -f /jffs/scripts/services-start ]; then
             touch /jffs/scripts/services-start
             chmod 0755 /jffs/scripts/services-start
@@ -167,28 +151,20 @@ case "$1" in
         ;;
 
     uninstall)
-        # Stop service
         /jffs/scripts/amnezia-ui stop
-
-        # Remove files
         rm -rf /www/user/amnezia-ui
         rm -rf /jffs/addons/amnezia-ui
         rm -rf /jffs/amnezia-ui
         rm -f /jffs/scripts/amnezia-ui
-
-        # Remove from cron and services
         sed -i '/amnezia-ui/d' /var/spool/cron/crontabs/admin
         sed -i '/amnezia-ui/d' /jffs/scripts/services-start
-
-        # Note: make, golang, amneziawg-go not removed to avoid breaking other addons
         echo "Uninstallation complete!"
         ;;
 
     start)
-        check_binary  # Ensure amneziawg-go is built
+        check_binary
         if [ -f "$CONFIG_DIR/$IFACE.conf" ]; then
             $BINARY up $IFACE
-            # Apply custom firewall (separate from Merlin WG)
             [ -x /jffs/amnezia-ui_custom/firewall_client ] && /jffs/amnezia-ui_custom/firewall_client
             service restart_httpd
             text_output "Started"
@@ -198,17 +174,16 @@ case "$1" in
         ;;
 
     stop)
-        check_binary  # Ensure amneziawg-go is built
+        check_binary
         $BINARY down $IFACE 2>/dev/null
-        # Apply custom firewall cleanup (separate from Merlin WG)
         [ -x /jffs/amnezia-ui_custom/firewall_cleanup ] && /jffs/amnezia-ui_custom/firewall_cleanup
         service restart_httpd
         text_output "Stopped"
         ;;
 
     status)
-        check_binary  # Ensure amneziawg-go is built
-        if $BINARY show $IFACE >/dev/null 2>&1; then
+        check_binary
+        if $BINARY show $IFACE | grep -q "latest handshake"; then
             text_output "Connected"
         else
             text_output "Disconnected"
@@ -216,13 +191,13 @@ case "$1" in
         ;;
 
     list)
-        check_binary  # Ensure amneziawg-go is built
+        check_binary
         SERVERS='[]'
         for conf in $CONFIG_DIR/*.conf; do
             if [ -f "$conf" ]; then
                 I=$(basename "$conf" .conf)
                 S=$($BINARY show $I 2>/dev/null | grep endpoint || echo "Unknown")
-                ST="Connected"  # Or parse
+                ST=$($BINARY show $I 2>/dev/null | grep -q "latest handshake" && echo "Connected" || echo "Disconnected")
                 SERVERS=$(echo "$SERVERS" | jq --arg i "$I" --arg e "$S" --arg s "$ST" '. += [{"iface": $i, "endpoint": $e, "status": $s}]' 2>/dev/null || echo "[]")
             fi
         done
@@ -230,12 +205,12 @@ case "$1" in
         ;;
 
     add|generate)
-        check_binary  # Ensure amneziawg-go is built
+        check_binary
         mkdir -p $CONFIG_DIR
         cat > "$CONFIG_DIR/$IFACE.conf" << EOF
 [Interface]
 PrivateKey = $PRIVATE_KEY
-Address = 10.0.0.2/32  # Example; customize
+Address = 10.0.0.2/32
 DNS = 8.8.8.8
 
 [Peer]
@@ -250,23 +225,20 @@ EOF
         if [ "$OBFS" = "true" ]; then
             echo "# Amnezia Obfuscation enabled (S1/S2 keys supported)" >> "$CONFIG_DIR/$IFACE.conf"
         fi
-        # Generate selective routing rules (iptables + dnsmasq)
         generate_firewall_script
         text_output "Config added/generated for $IFACE"
         ;;
 
     delete)
-        check_binary  # Ensure amneziawg-go is built
+        check_binary
         rm -f "$CONFIG_DIR/$IFACE.conf"
         $BINARY down $IFACE 2>/dev/null
-        # Cleanup selective routing
         [ -x /jffs/amnezia-ui_custom/firewall_cleanup ] && /jffs/amnezia-ui_custom/firewall_cleanup
         text_output "Deleted"
         ;;
 
     *)
         if [ -n "$ACTION" ]; then
-            # Dispatch to case above
             $0 $ACTION
         else
             echo "Usage: $0 {install|uninstall|start|stop|status|list|add|generate|delete}"
