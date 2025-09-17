@@ -1,85 +1,106 @@
-// Amnezia-UI Script (adapted from XRAYUI)
-const SCRIPT_PATH = '/jffs/scripts/amnezia-ui';
+document.getElementById('config-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const data = {
+        action: 'add',
+        iface: formData.get('iface'),
+        'private-key': formData.get('private-key'),
+        'public-key': formData.get('public-key'),
+        endpoint: formData.get('endpoint'),
+        'allowed-ips': formData.get('allowed-ips'),
+        psk: formData.get('psk'),
+        obfs: formData.get('obfs') ? 'on' : '',
+        s1: formData.get('s1'),
+        s2: formData.get('s2'),
+        s3: formData.get('s3'),
+        s4: formData.get('s4'),
+        'h1-h4': formData.get('h1-h4'),
+        rules: formData.get('rules')
+    };
 
-function updateStatus() {
-    fetch(SCRIPT_PATH + '?action=status')
-        .then(response => response.text())
-        .then(data => {
-            document.getElementById('status-text').textContent = data;
-        })
-        .catch(err => console.error('Status fetch error:', err));
-}
+    // Basic validation
+    if (!data.iface || !data['private-key'] || !data['public-key'] || !data.endpoint) {
+        alert('Please fill all required fields');
+        return;
+    }
+    if (data.s1 && !/^[A-Za-z0-9+/=]{44}$/.test(data.s1)) {
+        alert('S1 must be a 32-byte base64 key');
+        return;
+    }
+    if (data.s2 && !/^[A-Za-z0-9+/=]{44}$/.test(data.s2)) {
+        alert('S2 must be a 32-byte base64 key');
+        return;
+    }
+    if (data.s3 && !/^[A-Za-z0-9+/=]{44}$/.test(data.s3)) {
+        alert('S3 must be a 32-byte base64 key');
+        return;
+    }
+    if (data.s4 && !/^[A-Za-z0-9+/=]{44}$/.test(data.s4)) {
+        alert('S4 must be a 32-byte base64 key');
+        return;
+    }
+    if (data['h1-h4'] && !['1','2','3','4'].includes(data['h1-h4'])) {
+        alert('H1-H4 must be between 1 and 4');
+        return;
+    }
 
-function startAmnezia() {
-    fetch(SCRIPT_PATH + '?action=start', { method: 'POST' })
-        .then(() => updateStatus())
-        .catch(err => alert('Start error: ' + err));
-}
-
-function stopAmnezia() {
-    fetch(SCRIPT_PATH + '?action=stop', { method: 'POST' })
-        .then(() => updateStatus())
-        .catch(err => alert('Stop error: ' + err));
-}
-
-function generateConfig() {
-    const formData = new FormData(document.getElementById('server-form'));
-    formData.append('action', 'generate');
-    fetch(SCRIPT_PATH, { method: 'POST', body: formData })
-        .then(response => response.text())
-        .then(data => {
-            alert('Config generated: ' + data);
-            loadServers();
-        })
-        .catch(err => alert('Generate error: ' + err));
-}
-
-function addServer() {
-    const formData = new FormData(document.getElementById('server-form'));
-    formData.append('action', 'add');
-    fetch(SCRIPT_PATH, { method: 'POST', body: formData })
-        .then(() => {
-            loadServers();
-            document.getElementById('server-form').reset();
-        })
-        .catch(err => alert('Add error: ' + err));
-}
-
-function loadServers() {
-    fetch(SCRIPT_PATH + '?action=list')
-        .then(response => response.json())
-        .then(servers => {
-            const tbody = document.querySelector('#servers-table tbody');
-            tbody.innerHTML = '';
-            servers.forEach(server => {
-                const row = tbody.insertRow();
-                row.insertCell(0).textContent = server.iface;
-                row.insertCell(1).textContent = server.endpoint;
-                row.insertCell(2).textContent = server.status;
-                const actions = row.insertCell(3);
-                const delBtn = document.createElement('button');
-                delBtn.textContent = 'Delete';
-                delBtn.className = 'delete';
-                delBtn.onclick = () => deleteServer(server.iface);
-                actions.appendChild(delBtn);
-            });
-        })
-        .catch(err => console.error('Load servers error:', err));
-}
-
-function deleteServer(iface) {
-    fetch(SCRIPT_PATH + '?action=delete&iface=' + encodeURIComponent(iface), { method: 'POST' })
-        .then(() => loadServers())
-        .catch(err => alert('Delete error: ' + err));
-}
-
-// Init
-document.addEventListener('DOMContentLoaded', () => {
-    updateStatus();
-    loadServers();
-    document.getElementById('server-form').addEventListener('submit', (e) => {
-        e.preventDefault();
-        addServer();
-    });
-    setInterval(updateStatus, 5000);  // Poll every 5s
+    try {
+        const response = await fetch('/jffs/scripts/amnezia-ui', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams(data)
+        });
+        const text = await response.text();
+        alert(text);
+        loadServers();
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
 });
+
+async function loadServers() {
+    const response = await fetch('/jffs/scripts/amnezia-ui?action=list');
+    const servers = await response.json();
+    const table = document.getElementById('servers');
+    table.innerHTML = '<tr><th>Interface</th><th>Endpoint</th><th>Status</th><th>Actions</th></tr>';
+    servers.forEach(server => {
+        const row = table.insertRow();
+        row.innerHTML = `
+            <td>${server.iface}</td>
+            <td>${server.endpoint}</td>
+            <td>${server.status}</td>
+            <td>
+                <button onclick="startServer('${server.iface}')">Start</button>
+                <button onclick="stopServer('${server.iface}')">Stop</button>
+                <button onclick="deleteServer('${server.iface}')">Delete</button>
+            </td>
+        `;
+    });
+}
+
+async function startServer(iface) {
+    const response = await fetch(`/jffs/scripts/amnezia-ui?action=start&iface=${iface}`, { method: 'POST' });
+    alert(await response.text());
+    loadServers();
+}
+
+async function stopServer(iface) {
+    const response = await fetch(`/jffs/scripts/amnezia-ui?action=stop&iface=${iface}`, { method: 'POST' });
+    alert(await response.text());
+    loadServers();
+}
+
+async function deleteServer(iface) {
+    const response = await fetch(`/jffs/scripts/amnezia-ui?action=delete&iface=${iface}`, { method: 'POST' });
+    alert(await response.text());
+    loadServers();
+}
+
+async function loadLogs() {
+    const response = await fetch('/tmp/amnezia-ui-install.log');
+    document.getElementById('logs').textContent = await response.text();
+}
+
+loadServers();
+loadLogs();
+setInterval(loadLogs, 5000);
