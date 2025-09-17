@@ -4,9 +4,9 @@
 # Handles install/uninstall/start/stop + AJAX actions
 # Compatible with Merlin WireGuard, VPN Director
 # Selective routing via iptables (IP/domains)
-# Full AmneziaWG support (compiles amneziawg-go, removes build dependencies)
+# Full AmneziaWG support (v0.2.15 with H1-H4, S3, S4)
 
-VERSION="0.1.18"
+VERSION="0.2.0"
 CONFIG_DIR="/jffs/amnezia-ui/configs"
 BINARY="/opt/bin/amneziawg-go"
 CUSTOM_DIR="/jffs/amnezia-ui_custom"
@@ -29,6 +29,9 @@ elif [ -n "$CONTENT_LENGTH" ]; then
     OBFS=$(echo "$POST_DATA" | sed 's/.*obfs=on.*/1/' | grep -q 1 && echo "true" || echo "false")
     S1=$(echo "$POST_DATA" | sed 's/.*s1=\([^&]*\).*/\1/')
     S2=$(echo "$POST_DATA" | sed 's/.*s2=\([^&]*\).*/\1/')
+    S3=$(echo "$POST_DATA" | sed 's/.*s3=\([^&]*\).*/\1/')
+    S4=$(echo "$POST_DATA" | sed 's/.*s4=\([^&]*\).*/\1/')
+    H1_H4=$(echo "$POST_DATA" | sed 's/.*h1-h4=\([1-4]*\).*/\1/')  # Range 1-4 for H1-H4
     RULES=$(echo "$POST_DATA" | sed 's/.*rules=\([^&]*\).*/\1/')
 fi
 
@@ -46,12 +49,16 @@ text_output() {
     exit 0
 }
 
-# Check if binary exists, compile amneziawg-go or error
+# Check if binary exists, compile amneziawg-go v0.2.15 or error
 check_binary() {
     if [ ! -x "$BINARY" ]; then
+        if [ -f /opt/tmp/opkg.lock ]; then
+            echo "Removing stale opkg lock file..." | tee -a "$INSTALL_LOG"
+            rm -f /opt/tmp/opkg.lock 2>>"$INSTALL_LOG"
+        fi
         opkg update >> "$INSTALL_LOG" 2>&1 || { echo "Failed to update opkg. Check Entware repository." | tee -a "$INSTALL_LOG"; exit 1; }
         # Install build dependencies
-        for pkg in make go git; do
+        for pkg in make go git git-http; do
             opkg list-installed | grep -q "^$pkg " || { echo "Installing $pkg for compilation..." | tee -a "$INSTALL_LOG"; opkg install "$pkg" >> "$INSTALL_LOG" 2>&1 || { echo "Cannot install $pkg. Check Entware repository or try 'opkg install $pkg' manually." | tee -a "$INSTALL_LOG"; exit 1; }; }
         done
         # Install runtime dependencies
@@ -67,15 +74,22 @@ check_binary() {
         fi
         echo "Available space: $FREE_SPACE_KB KB" | tee -a "$INSTALL_LOG"
         cd /tmp || { echo "Failed to change to /tmp directory." | tee -a "$INSTALL_LOG"; exit 1; }
-        git clone https://github.com/amnezia-vpn/amneziawg-go >> "$INSTALL_LOG" 2>&1
-        if [ $? -ne 0 ]; then
-            echo "Failed to clone amneziawg-go repository. Check network or GitHub availability." | tee -a "$INSTALL_LOG"
+        for attempt in 1 2 3; do
+            git clone --branch v0.2.15 https://github.com/amnezia-vpn/amneziawg-go >> "$INSTALL_LOG" 2>&1
+            if [ $? -eq 0 ]; then
+                break
+            fi
+            echo "Git clone failed, attempt $attempt/3. Retrying in 5 seconds..." | tee -a "$INSTALL_LOG"
+            sleep 5
+        done
+        if [ ! -d /tmp/amneziawg-go ]; then
+            echo "Failed to clone amneziawg-go v0.2.15 after 3 attempts. Check network or GitHub availability." | tee -a "$INSTALL_LOG"
             exit 1
         fi
         cd amneziawg-go || { echo "Failed to change to amneziawg-go directory." | tee -a "$INSTALL_LOG"; exit 1; }
         make >> "$INSTALL_LOG" 2>&1
         if [ $? -ne 0 ]; then
-            echo "Failed to build amneziawg-go. Check $INSTALL_LOG for make errors." | tee -a "$INSTALL_LOG"
+            echo "Failed to build amneziawg-go v0.2.15. Check $INSTALL_LOG for make errors." | tee -a "$INSTALL_LOG"
             exit 1
         fi
         if [ ! -f amneziawg-go ]; then
@@ -89,11 +103,11 @@ check_binary() {
         fi
         rm -rf /tmp/amneziawg-go
         if [ ! -x "$BINARY" ]; then
-            echo "Failed to build amneziawg-go. Check $INSTALL_LOG, ensure make, go, git are installed via opkg, check /opt space (df -h /opt)." | tee -a "$INSTALL_LOG"
+            echo "Failed to build amneziawg-go v0.2.15. Check $INSTALL_LOG, ensure make, go, git are installed via opkg, check /opt space (df -h /opt)." | tee -a "$INSTALL_LOG"
             exit 1
         fi
         # Remove build dependencies if not used by other addons
-        for pkg in make go git; do
+        for pkg in make go git git-http; do
             if opkg list-installed | grep -q "^$pkg "; then
                 if check_package_usage "$pkg"; then
                     echo "Removing $pkg (used only for compilation)..." | tee -a "$INSTALL_LOG"
@@ -120,8 +134,8 @@ check_package_usage() {
         echo "ipset used by VPN Director (nvram vpndirector_rulelist). Skipping removal." >> "$UNINSTALL_LOG"
         return 1
     fi
-    # Check for scripts/addons using make, go, git, or jq
-    if [ "$pkg" = "make" ] || [ "$pkg" = "go" ] || [ "$pkg" = "git" ] || [ "$pkg" = "jq" ]; then
+    # Check for scripts/addons using make, go, git, git-http, or jq
+    if [ "$pkg" = "make" ] || [ "$pkg" = "go" ] || [ "$pkg" = "git" ] || [ "$pkg" = "git-http" ] || [ "$pkg" = "jq" ]; then
         if find /jffs/scripts /jffs/addons -type f -exec grep -qE "$pkg " {} \; 2>/dev/null; then
             echo "$pkg used by other scripts/addons in /jffs/scripts or /jffs/addons. Skipping removal." >> "$UNINSTALL_LOG"
             return 1
@@ -141,205 +155,4 @@ generate_firewall_script() {
         echo "#!/bin/sh" > "$FIREWALL_SCRIPT"
         echo "# Selective routing for AmneziaWG ($IFACE)" >> "$FIREWALL_SCRIPT"
         echo "iptables -t mangle -N AMNEZIA-MARK" >> "$FIREWALL_SCRIPT"
-        echo "iptables -t mangle -A AMNEZIA-MARK -j MARK --set-mark 0x80000" >> "$FIREWALL_SCRIPT"
-        for rule in $(echo "$RULES" | tr ',' ' '); do
-            if [ -n "$rule" ]; then
-                if echo "$rule" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?$'; then
-                    echo "iptables -t mangle -A AMNEZIA-MARK -d $rule -j MARK --set-mark 0x80000" >> "$FIREWALL_SCRIPT"
-                else
-                    echo "address=/$rule/0.0.0.0" >> "$DNSMASQ_CONF"
-                    echo "ipset=/$rule/amnezia_vpn" >> "$DNSMASQ_CONF"
-                    echo "iptables -t mangle -A AMNEZIA-MARK -m set --match-set amnezia_vpn dst -j MARK --set-mark 0x80000" >> "$FIREWALL_SCRIPT"
-                fi
-            fi
-        done
-        echo "iptables -t mangle -A OUTPUT -j AMNEZIA-MARK" >> "$FIREWALL_SCRIPT"
-        echo "iptables -t mangle -A PREROUTING -j AMNEZIA-MARK" >> "$FIREWALL_SCRIPT"
-        echo "ip rule add fwmark 0x80000 table 100" >> "$FIREWALL_SCRIPT"
-        echo "ip route add local 0.0.0.0/0 dev $IFACE table 100" >> "$FIREWALL_SCRIPT"
-        echo "ipset list amnezia_vpn 2>/dev/null || ipset create amnezia_vpn hash:ip" >> "$FIREWALL_SCRIPT"
-        echo "service restart_dnsmasq" >> "$FIREWALL_SCRIPT"
-        chmod +x "$FIREWALL_SCRIPT"
-
-        echo "#!/bin/sh" > "$CLEANUP_SCRIPT"
-        echo "# Cleanup selective routing for AmneziaWG ($IFACE)" >> "$CLEANUP_SCRIPT"
-        echo "ip route del local 0.0.0.0/0 dev $IFACE table 100" >> "$CLEANUP_SCRIPT"
-        echo "ip rule del fwmark 0x80000 table 100" >> "$CLEANUP_SCRIPT"
-        echo "iptables -t mangle -D OUTPUT -j AMNEZIA-MARK" >> "$CLEANUP_SCRIPT"
-        echo "iptables -t mangle -D PREROUTING -j AMNEZIA-MARK" >> "$CLEANUP_SCRIPT"
-        echo "iptables -t mangle -F AMNEZIA-MARK" >> "$CLEANUP_SCRIPT"
-        echo "iptables -t mangle -X AMNEZIA-MARK" >> "$CLEANUP_SCRIPT"
-        echo "ipset destroy amnezia_vpn 2>/dev/null" >> "$CLEANUP_SCRIPT"
-        echo "rm -f $DNSMASQ_CONF" >> "$CLEANUP_SCRIPT"
-        echo "service restart_dnsmasq" >> "$CLEANUP_SCRIPT"
-        chmod +x "$CLEANUP_SCRIPT"
-    fi
-}
-
-case "$1" in
-    install)
-        echo "Starting installation (v$VERSION)..." | tee -a "$INSTALL_LOG"
-        if [ ! -d /jffs ] || ! touch /jffs/.amnezia-test 2>/dev/null; then
-            echo "JFFS not enabled or not writable. Enable JFFS in Administration > System and reboot." | tee -a "$INSTALL_LOG"
-            echo "Debug: ls /jffs/ = $(ls /jffs/ 2>/dev/null); df = $(df -h | grep jffs)" | tee -a "$INSTALL_LOG"
-            exit 1
-        fi
-        rm -f /jffs/.amnezia-test
-
-        if [ ! -d /opt ]; then
-            echo "Entware not installed. Run 'amtm' in SSH and install Entware, then try again." | tee -a "$INSTALL_LOG"
-            exit 1
-        fi
-
-        mkdir -p /jffs/amnezia-ui_custom
-        mkdir -p /jffs/scripts
-        mkdir -p $CONFIG_DIR
-
-        # Simple copy from /jffs/addons/amnezia-ui (assume tar extracted there)
-        echo "Copying /jffs/addons/amnezia-ui/www to /www/user/amnezia-ui..." | tee -a "$INSTALL_LOG"
-        cp -r /jffs/addons/amnezia-ui/www /www/user/amnezia-ui 2>>"$INSTALL_LOG"
-        if [ $? -ne 0 ] || [ ! -d /www/user/amnezia-ui ]; then
-            echo "Error: Failed to copy /jffs/addons/amnezia-ui/www to /www/user/amnezia-ui" | tee -a "$INSTALL_LOG"
-            exit 1
-        fi
-        echo "Copying /jffs/addons/amnezia-ui/configs to /jffs/amnezia-ui/..." | tee -a "$INSTALL_LOG"
-        cp -r /jffs/addons/amnezia-ui/configs /jffs/amnezia-ui/ 2>>"$INSTALL_LOG"
-        if [ $? -ne 0 ] || [ ! -d /jffs/amnezia-ui ]; then
-            echo "Error: Failed to copy /jffs/addons/amnezia-ui/configs to /jffs/amnezia-ui/" | tee -a "$INSTALL_LOG"
-            exit 1
-        fi
-        check_binary
-        echo "Removing temporary directory /jffs/addons/amnezia-ui..." | tee -a "$INSTALL_LOG"
-        rm -rf /jffs/addons/amnezia-ui
-
-        if ! grep -q "amnezia-ui" /var/spool/cron/crontabs/admin; then
-            echo "Adding cron job for /jffs/scripts/amnezia-ui start..." | tee -a "$INSTALL_LOG"
-            echo "*/2 * * * * /jffs/scripts/amnezia-ui start" >> /var/spool/cron/crontabs/admin
-        fi
-
-        if [ ! -f /jffs/scripts/services-start ]; then
-            echo "Creating /jffs/scripts/services-start..." | tee -a "$INSTALL_LOG"
-            touch /jffs/scripts/services-start
-            chmod 0755 /jffs/scripts/services-start
-        fi
-        if ! grep -q "amnezia-ui" /jffs/scripts/services-start; then
-            echo "Adding /jffs/scripts/amnezia-ui start to /jffs/scripts/services-start..." | tee -a "$INSTALL_LOG"
-            echo "/jffs/scripts/amnezia-ui start" >> /jffs/scripts/services-start
-        fi
-
-        echo "Installation complete! Reboot router or run /jffs/scripts/amnezia-ui start" | tee -a "$INSTALL_LOG"
-        ;;
-
-    uninstall)
-        echo "Starting uninstallation..." > "$UNINSTALL_LOG"
-        /jffs/scripts/amnezia-ui stop
-        rm -rf /www/user/amnezia-ui
-        rm -rf /jffs/addons/amnezia-ui
-        rm -rf /jffs/amnezia-ui
-        rm -f /jffs/scripts/amnezia-ui
-        rm -f /opt/bin/amneziawg-go
-        sed -i '/amnezia-ui/d' /var/spool/cron/crontabs/admin
-        sed -i '/amnezia-ui/d' /jffs/scripts/services-start
-
-        # Remove dependencies if not used by other addons or Merlin
-        for pkg in ipset jq make go git; do
-            if opkg list-installed | grep -q "^$pkg "; then
-                if check_package_usage "$pkg"; then
-                    echo "Removing $pkg..." >> "$UNINSTALL_LOG"
-                    opkg remove --autoremove "$pkg" >> "$UNINSTALL_LOG" 2>&1
-                else
-                    echo "Skipping removal of $pkg (used by other addons/Merlin)." >> "$UNINSTALL_LOG"
-                fi
-            else
-                echo "$pkg not installed, skipping." >> "$UNINSTALL_LOG"
-            fi
-        done
-
-        echo "Uninstallation complete! Check $UNINSTALL_LOG for details." | tee -a "$UNINSTALL_LOG"
-        ;;
-
-    start)
-        check_binary
-        if [ -f "$CONFIG_DIR/$IFACE.conf" ]; then
-            $BINARY up $IFACE
-            [ -x /jffs/amnezia-ui_custom/firewall_client ] && /jffs/amnezia-ui_custom/firewall_client
-            service restart_httpd
-            text_output "Started"
-        else
-            text_output "Config not found"
-        fi
-        ;;
-
-    stop)
-        check_binary
-        $BINARY down $IFACE 2>/dev/null
-        [ -x /jffs/amnezia-ui_custom/firewall_cleanup ] && /jffs/amnezia-ui_custom/firewall_cleanup
-        service restart_httpd
-        text_output "Stopped"
-        ;;
-
-    status)
-        check_binary
-        if $BINARY show $IFACE | grep -q "latest handshake"; then
-            text_output "Connected"
-        else
-            text_output "Disconnected"
-        fi
-        ;;
-
-    list)
-        check_binary
-        SERVERS='[]'
-        for conf in $CONFIG_DIR/*.conf; do
-            if [ -f "$conf" ]; then
-                I=$(basename "$conf" .conf)
-                S=$($BINARY show $I 2>/dev/null | grep endpoint || echo "Unknown")
-                ST=$($BINARY show $I 2>/dev/null | grep -q "latest handshake" && echo "Connected" || echo "Disconnected")
-                SERVERS=$(echo "$SERVERS" | jq --arg i "$I" --arg e "$S" --arg s "$ST" '. += [{"iface": $i, "endpoint": $e, "status": $s}]' 2>/dev/null || echo "[]")
-            fi
-        done
-        json_output "$SERVERS"
-        ;;
-
-    add|generate)
-        check_binary
-        mkdir -p $CONFIG_DIR
-        cat > "$CONFIG_DIR/$IFACE.conf" << EOF
-[Interface]
-PrivateKey = $PRIVATE_KEY
-Address = 10.0.0.2/32
-DNS = 8.8.8.8
-
-[Peer]
-PublicKey = $PUBLIC_KEY
-Endpoint = $ENDPOINT
-AllowedIPs = $ALLOWED_IPS
-PersistentKeepalive = 25
-${PSK:+PresharedKey = $PSK}
-${S1:+S1 = $S1}
-${S2:+S2 = $S2}
-EOF
-        if [ "$OBFS" = "true" ]; then
-            echo "# Amnezia Obfuscation enabled (S1/S2 keys supported)" >> "$CONFIG_DIR/$IFACE.conf"
-        fi
-        generate_firewall_script
-        text_output "Config added/generated for $IFACE"
-        ;;
-
-    delete)
-        check_binary
-        rm -f "$CONFIG_DIR/$IFACE.conf"
-        $BINARY down $IFACE 2>/dev/null
-        [ -x /jffs/amnezia-ui_custom/firewall_cleanup ] && /jffs/amnezia-ui_custom/firewall_cleanup
-        text_output "Deleted"
-        ;;
-
-    *)
-        if [ -n "$ACTION" ]; then
-            $0 $ACTION
-        else
-            echo "Usage: $0 {install|uninstall|start|stop|status|list|add|generate|delete}"
-        fi
-        exit 1
-        ;;
-esac
+        echo "iptables -t mangle -A AM
