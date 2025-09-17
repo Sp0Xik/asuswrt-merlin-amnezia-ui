@@ -6,11 +6,12 @@
 # Selective routing via iptables (IP/domains)
 # Full AmneziaWG support (no fallback to wg-quick)
 
-VERSION="0.1.10"
+VERSION="0.1.12"
 CONFIG_DIR="/jffs/amnezia-ui/configs"
 BINARY="/opt/bin/amneziawg-go"
 CUSTOM_DIR="/jffs/amnezia-ui_custom"
 UNINSTALL_LOG="/tmp/amnezia-ui-uninstall.log"
+INSTALL_LOG="/tmp/amnezia-ui-install.log"
 
 # CGI-like parsing for HTTP requests (from JS fetch)
 if [ -n "$QUERY_STRING" ]; then
@@ -48,20 +49,20 @@ text_output() {
 # Check if binary exists, build amneziawg-go or error (no fallback)
 check_binary() {
     if [ ! -x "$BINARY" ]; then
-        opkg update
+        opkg update >> "$INSTALL_LOG" 2>&1
         # Install only missing dependencies
-        opkg list-installed | grep -q make || opkg install make
-        opkg list-installed | grep -q '^go ' || opkg install go || { echo "Cannot install go. Check Entware repository or try 'opkg install go' manually."; exit 1; }
-        opkg list-installed | grep -q ipset || opkg install ipset
-        opkg list-installed | grep -q git || opkg install git
-        echo "Checking /opt space:" | tee -a /tmp/amnezia-ui-install.log
-        df -h /opt | tee -a /tmp/amnezia-ui-install.log
-        df -h /opt | grep -q "Avail.*[5-9][0-9]*M" || { echo "Insufficient space in /opt. Free up ~50MB (df -h /opt) and try again."; exit 1; }
-        cd /tmp && git clone https://github.com/amnezia-vpn/amneziawg-go && cd amneziawg-go && make > /tmp/amneziawg-build.log 2>&1
+        opkg list-installed | grep -q make || opkg install make >> "$INSTALL_LOG" 2>&1
+        opkg list-installed | grep -q '^go ' || opkg install go >> "$INSTALL_LOG" 2>&1 || { echo "Cannot install go. Check Entware repository or try 'opkg install go' manually." | tee -a "$INSTALL_LOG"; exit 1; }
+        opkg list-installed | grep -q ipset || opkg install ipset >> "$INSTALL_LOG" 2>&1
+        opkg list-installed | grep -q git || opkg install git >> "$INSTALL_LOG" 2>&1
+        echo "Checking /opt space:" | tee -a "$INSTALL_LOG"
+        df -h /opt | tee -a "$INSTALL_LOG"
+        df -h /opt | grep -q "Avail.*[5-9][0-9]*M" || { echo "Insufficient space in /opt. Free up ~50MB (df -h /opt) and try again." | tee -a "$INSTALL_LOG"; exit 1; }
+        cd /tmp && git clone https://github.com/amnezia-vpn/amneziawg-go >> "$INSTALL_LOG" 2>&1 && cd amneziawg-go && make >> "$INSTALL_LOG" 2>&1
         cp amneziawg-go $BINARY && chmod +x $BINARY
         rm -rf /tmp/amneziawg-go
         if [ ! -x "$BINARY" ]; then
-            echo "Failed to build amneziawg-go. Check /tmp/amneziawg-build.log, ensure make, go, ipset, git are installed via opkg, check /opt space (df -h /opt)."
+            echo "Failed to build amneziawg-go. Check $INSTALL_LOG, ensure make, go, ipset, git are installed via opkg, check /opt space (df -h /opt)." | tee -a "$INSTALL_LOG"
             exit 1
         fi
     fi
@@ -140,14 +141,14 @@ generate_firewall_script() {
 case "$1" in
     install)
         if [ ! -d /jffs ] || ! touch /jffs/.amnezia-test 2>/dev/null; then
-            echo "JFFS not enabled or not writable. Enable JFFS in Administration > System and reboot."
-            echo "Debug: ls /jffs/ = $(ls /jffs/ 2>/dev/null); df = $(df -h | grep jffs)"
+            echo "JFFS not enabled or not writable. Enable JFFS in Administration > System and reboot." | tee -a "$INSTALL_LOG"
+            echo "Debug: ls /jffs/ = $(ls /jffs/ 2>/dev/null); df = $(df -h | grep jffs)" | tee -a "$INSTALL_LOG"
             exit 1
         fi
         rm -f /jffs/.amnezia-test
 
         if [ ! -d /opt ]; then
-            echo "Entware not installed. Run 'amtm' in SSH and install Entware, then try again."
+            echo "Entware not installed. Run 'amtm' in SSH and install Entware, then try again." | tee -a "$INSTALL_LOG"
             exit 1
         fi
 
@@ -156,20 +157,24 @@ case "$1" in
         mkdir -p /jffs/scripts
         mkdir -p $CONFIG_DIR
 
-        # Copy files, support both possible archive structures
+        # Copy files, support multiple possible archive structures
+        echo "Checking archive structure in /jffs/addons/amnezia-ui:" | tee -a "$INSTALL_LOG"
+        ls -lR /jffs/addons/amnezia-ui/ >> "$INSTALL_LOG" 2>&1
         if [ -f /jffs/addons/amnezia-ui/amnezia-ui ]; then
             mv /jffs/addons/amnezia-ui/amnezia-ui /jffs/scripts/amnezia-ui
+            echo "Moved /jffs/addons/amnezia-ui/amnezia-ui to /jffs/scripts/amnezia-ui" | tee -a "$INSTALL_LOG"
         elif [ -f /jffs/addons/amnezia-ui/scripts/amnezia-ui ]; then
             mv /jffs/addons/amnezia-ui/scripts/amnezia-ui /jffs/scripts/amnezia-ui
+            echo "Moved /jffs/addons/amnezia-ui/scripts/amnezia-ui to /jffs/scripts/amnezia-ui" | tee -a "$INSTALL_LOG"
         else
-            echo "Error: amnezia-ui script not found in /jffs/addons/amnezia-ui/ or /jffs/addons/amnezia-ui/scripts/"
+            echo "Error: amnezia-ui script not found in /jffs/addons/amnezia-ui/ or /jffs/addons/amnezia-ui/scripts/. Check archive structure (tar -tzf /tmp/asuswrt-merlin-amnezia-ui.tar.gz)." | tee -a "$INSTALL_LOG"
             exit 1
         fi
-        cp -r /jffs/addons/amnezia-ui/www /www/user/amnezia-ui
-        cp -r /jffs/addons/amnezia-ui/configs /jffs/amnezia-ui/
+        chmod 0755 /jffs/scripts/amnezia-ui || { echo "Error: Failed to set executable permissions on /jffs/scripts/amnezia-ui" | tee -a "$INSTALL_LOG"; exit 1; }
+        cp -r /jffs/addons/amnezia-ui/www /www/user/amnezia-ui >> "$INSTALL_LOG" 2>&1
+        cp -r /jffs/addons/amnezia-ui/configs /jffs/amnezia-ui/ >> "$INSTALL_LOG" 2>&1
         rm -rf /jffs/addons/amnezia-ui
 
-        chmod 0755 /jffs/scripts/amnezia-ui
         check_binary
 
         if ! grep -q "amnezia-ui" /var/spool/cron/crontabs/admin; then
@@ -184,7 +189,7 @@ case "$1" in
             echo "/jffs/scripts/amnezia-ui start" >> /jffs/scripts/services-start
         fi
 
-        echo "Installation complete! Reboot router or run /jffs/scripts/amnezia-ui start"
+        echo "Installation complete! Reboot router or run /jffs/scripts/amnezia-ui start" | tee -a "$INSTALL_LOG"
         ;;
 
     uninstall)
@@ -212,7 +217,7 @@ case "$1" in
             fi
         done
 
-        echo "Uninstallation complete! Check $UNINSTALL_LOG for details."
+        echo "Uninstallation complete! Check $UNINSTALL_LOG for details." | tee -a "$UNINSTALL_LOG"
         ;;
 
     start)
