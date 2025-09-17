@@ -4,16 +4,25 @@ Amnezia-UI is a custom addon for ASUSWRT-Merlin firmware, designed to manage Amn
 
 ## Features
 - **Full AmneziaWG Support**: Utilizes `amneziawg-go` for complete WireGuard functionality with S1/S2 obfuscation keys to bypass DPI (no fallback to standard wg-quick).
-- **Selective Routing (Split-Tunneling)**: Route specific IPs or domains through the VPN while the rest of the traffic uses the regular internet, using iptables and dnsmasq (similar to advanced Merlin VPN addons).
+- **Selective Routing (Split-Tunneling)**: Route specific IPs or domains through the VPN while the rest of the traffic uses the regular internet, using iptables and dnsmasq.
 - **Web Interface**: Manage VPN configurations via a user-friendly UI at `http://<router_ip>/user/amnezia-ui/`.
 - **Compatibility**: Works alongside Merlin's built-in WireGuard (wg0/wg1) and VPN Director without conflicts.
-- **Entware Integration**: Requires Entware for dependencies (`make`, `golang`, `ipset`).
+- **Entware Integration**: Requires Entware for dependencies (`make`, `golang`, `ipset`, `git`).
 
 ## Requirements
-- ASUS router with ASUSWRT-Merlin firmware (tested on 386.1+).
+- ASUS router with ASUSWRT-Merlin firmware (tested on 3004.388.9_2, TUF-AX5400).
 - JFFS enabled (Administration > System > Enable JFFS).
-- Entware installed via `amtm` (for `make`, `golang`, `ipset`).
-- Sufficient storage in `/opt` (~100MB for `golang`, check with `df -h /opt`).
+- Entware installed via `amtm` (for `make`, `golang`, `ipset`, `git`).
+- ~100MB free in `/opt` (check with `df -h /opt`).
+
+## Dependencies
+During installation, the script checks and installs only missing dependencies:
+- `make`: For building `amneziawg-go`.
+- `golang`: For compiling Go code.
+- `ipset`: For domain-based selective routing.
+- `git`: For cloning the AmneziaWG repository.
+
+These are installed via `opkg install` if absent. They are not removed during uninstall to avoid breaking other addons.
 
 ## Installation
 1. **Install Entware** (if not already installed):
@@ -22,10 +31,7 @@ Amnezia-UI is a custom addon for ASUSWRT-Merlin firmware, designed to manage Amn
    amtm
    # Follow amtm to install Entware
    opkg update
-   opkg install make golang ipset
    df -h /opt  # Ensure ~100MB free
-   make --version
-   go version
 
 Download and Install Amnezia-UI:
 bashwget -O /tmp/asuswrt-merlin-amnezia-ui.tar.gz https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/asuswrt-merlin-amnezia-ui.tar.gz
@@ -55,6 +61,22 @@ Enable Obfuscation: Check to enable S1/S2 obfuscation.
 
 
 Click "Add Config" to save.
+Example Config (/jffs/amnezia-ui/configs/amnezia0.conf):
+ini[Interface]
+PrivateKey = <your_private_key>
+Address = 10.0.0.2/32
+DNS = 8.8.8.8
+
+[Peer]
+PublicKey = <server_public_key>
+Endpoint = <server_ip>:51820
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = 25
+PresharedKey = <psk>
+S1 = <32-byte_base64_key>
+S2 = <32-byte_base64_key>
+# Amnezia Obfuscation enabled (S1/S2 keys supported)
+
 
 
 Manage VPNs:
@@ -66,26 +88,27 @@ Selective routing: Traffic to specified IPs/domains goes through the VPN; others
 Verify:
 
 Check generated files:
-bashcat /jffs/amnezia-ui/configs/amnezia0.conf  # VPN config with S1/S2
-cat /jffs/amnezia-ui_custom/firewall_client  # iptables rules
-cat /jffs/amnezia-ui_custom/dnsmasq_rules.conf  # domain rules
+bashcat /jffs/amnezia-ui/configs/amnezia0.conf
+cat /jffs/amnezia-ui_custom/firewall_client
+cat /jffs/amnezia-ui_custom/dnsmasq_rules.conf
 
 Test routing:
-bashping 8.8.8.8  # Should go through VPN if in rules
-ping 1.1.1.1  # Should go through regular internet
+bashping 8.8.8.8  # Through VPN if in rules
+ping 1.1.1.1  # Through internet
 
 Verify Merlin WG: In Merlin UI > VPN > WireGuard Client (should work).
 Verify VPN Director: nvram get vpndirector_rulelist (unchanged).
 
 
 
-Troubleshooting
+Known Issues
 
-Build Failure: If installation fails with "Failed to build amneziawg-go":
+Build Failure: If "Failed to build amneziawg-go":
 
-Run opkg install make golang ipset.
-Check /opt space: df -h /opt (~100MB needed).
-Ensure Entware is installed via amtm.
+Check /tmp/amneziawg-build.log for errors.
+Ensure make, golang, ipset, git installed (opkg install make golang ipset git).
+Verify ~100MB free in /opt (df -h /opt).
+Run amtm to install Entware if missing.
 
 
 UI Not Loading: Run service restart_httpd and check http://<router_ip>/user/amnezia-ui/.
@@ -93,7 +116,7 @@ Routing Issues: Verify /jffs/amnezia-ui_custom/firewall_client and dnsmasq_rules
 
 Uninstallation
 bash/jffs/scripts/amnezia-ui uninstall
-Note: Dependencies (make, golang, ipset) are not removed to avoid breaking other addons.
+Note: Dependencies (make, golang, ipset, git) are not removed to avoid breaking other addons.
 Contributing
 Submit issues or PRs at https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui. Tested on TUF-AX5400 (ARMv7).
 License
