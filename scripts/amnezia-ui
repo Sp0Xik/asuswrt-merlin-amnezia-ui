@@ -6,7 +6,7 @@
 # Selective routing via iptables (IP/domains)
 # Full AmneziaWG support (no fallback to wg-quick)
 
-VERSION="0.1.13"
+VERSION="0.1.14"
 CONFIG_DIR="/jffs/amnezia-ui/configs"
 BINARY="/opt/bin/amneziawg-go"
 CUSTOM_DIR="/jffs/amnezia-ui_custom"
@@ -57,7 +57,18 @@ check_binary() {
         opkg list-installed | grep -q git || opkg install git >> "$INSTALL_LOG" 2>&1
         echo "Checking /opt space:" | tee -a "$INSTALL_LOG"
         df -h /opt | tee -a "$INSTALL_LOG"
-        df -h /opt | grep -q "Avail.*[5-9][0-9]*M" || { echo "Insufficient space in /opt. Free up ~50MB (df -h /opt) and try again." | tee -a "$INSTALL_LOG"; exit 1; }
+        # Check for at least 50MB free (in MB or GB)
+        FREE_SPACE=$(df /opt | awk 'NR==2 {print $4}')
+        FREE_SPACE_MB=$(echo "$FREE_SPACE" | sed 's/[MG]//')
+        UNIT=$(echo "$FREE_SPACE" | sed 's/[0-9.]*//')
+        if [ "$UNIT" = "G" ]; then
+            FREE_SPACE_MB=$(echo "$FREE_SPACE_MB * 1024" | bc)
+        fi
+        if [ -z "$FREE_SPACE_MB" ] || [ $(echo "$FREE_SPACE_MB < 50" | bc) -eq 1 ]; then
+            echo "Insufficient space in /opt. Free up ~50MB (available: ${FREE_SPACE:-0}${UNIT:-MB})." | tee -a "$INSTALL_LOG"
+            exit 1
+        fi
+        echo "Available space: ${FREE_SPACE}${UNIT} (${FREE_SPACE_MB}MB)" | tee -a "$INSTALL_LOG"
         cd /tmp && git clone https://github.com/amnezia-vpn/amneziawg-go >> "$INSTALL_LOG" 2>&1 && cd amneziawg-go && make >> "$INSTALL_LOG" 2>&1
         cp amneziawg-go $BINARY && chmod +x $BINARY
         rm -rf /tmp/amneziawg-go
@@ -79,7 +90,7 @@ check_package_usage() {
     fi
     # Check for Merlin VPN Director or other addons using ipset
     if [ "$pkg" = "ipset" ] && nvram get vpndirector_rulelist | grep -q .; then
-        echo "ipset used by VPN Director (nvram vpndirector_rulelist). Skipping removal." >> "$UNINSTALL_LOG"
+        echo "ipset used by VPN Director (nvram vpndirector_rulelist). Skipping removal." | tee -a "$UNINSTALL_LOG"
         return 1
     fi
     # Check for scripts/addons using go or git
