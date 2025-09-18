@@ -7,7 +7,7 @@
 # Full AmneziaWG support (v0.2.15 with H1-H4, S3, S4)
 # Dynamically assigns userN.asp and adds button to VPN tab
 
-VERSION="0.2.3.1"
+VERSION="0.2.3.2"
 CONFIG_DIR="/jffs/amnezia-ui/configs"
 BINARY="/opt/bin/amneziawg-go"
 CUSTOM_DIR="/jffs/amnezia-ui_custom"
@@ -95,6 +95,8 @@ check_binary() {
         for pkg in ipset jq; do
             opkg list-installed | grep -q "^$pkg " || { echo "Installing $pkg for runtime..." | tee -a "$INSTALL_LOG"; opkg install "$pkg" >> "$INSTALL_LOG" 2>&1 || { echo "Cannot install $pkg. Check Entware repository or try 'opkg install $pkg' manually." | tee -a "$INSTALL_LOG"; exit 1; }; }
         done
+        echo "Waiting 5 seconds for network stabilization after opkg..." | tee -a "$INSTALL_LOG"
+        sleep 5
         echo "Checking /opt space:" | tee -a "$INSTALL_LOG"
         df -k /opt | tee -a "$INSTALL_LOG"
         FREE_SPACE_KB=$(df -k /opt | awk 'NR==2 {print $4}')
@@ -107,7 +109,7 @@ check_binary() {
         check_network || { echo "Network check failed. Trying wget fallback..." | tee -a "$INSTALL_LOG"; }
         for attempt in 1 2 3; do
             echo "Attempting git clone (attempt $attempt/3)..." | tee -a "$INSTALL_LOG"
-            git clone --branch v0.2.15 https://github.com/amnezia-vpn/amneziawg-go >> "$INSTALL_LOG" 2>&1
+            GIT_SSL_NO_VERIFY=true git clone --branch v0.2.15 https://github.com/amnezia-vpn/amneziawg-go 2>&1 | tee -a "$INSTALL_LOG"
             if [ $? -eq 0 ]; then
                 break
             fi
@@ -116,9 +118,9 @@ check_binary() {
         done
         if [ ! -d /tmp/amneziawg-go ]; then
             echo "Git clone failed after 3 attempts. Trying wget fallback..." | tee -a "$INSTALL_LOG"
-            wget -O /tmp/amneziawg-go.tar.gz https://github.com/amnezia-vpn/amneziawg-go/archive/refs/tags/v0.2.15.tar.gz >> "$INSTALL_LOG" 2>&1
+            wget -O /tmp/amneziawg-go.tar.gz https://github.com/amnezia-vpn/amneziawg-go/archive/refs/tags/v0.2.15.tar.gz 2>&1 | tee -a "$INSTALL_LOG"
             if [ $? -eq 0 ]; then
-                tar -xzf /tmp/amneziawg-go.tar.gz -C /tmp >> "$INSTALL_LOG" 2>&1
+                tar -xzf /tmp/amneziawg-go.tar.gz -C /tmp 2>&1 | tee -a "$INSTALL_LOG"
                 mv /tmp/amneziawg-go-0.2.15 /tmp/amneziawg-go
             else
                 echo "Wget fallback failed. Check network, DNS, or GitHub availability." | tee -a "$INSTALL_LOG"
@@ -130,7 +132,7 @@ check_binary() {
             exit 1
         fi
         cd amneziawg-go || { echo "Failed to change to amneziawg-go directory." | tee -a "$INSTALL_LOG"; exit 1; }
-        GOOS=linux GOARCH=arm GOARM=7 make >> "$INSTALL_LOG" 2>&1
+        GOOS=linux GOARCH=arm GOARM=7 make 2>&1 | tee -a "$INSTALL_LOG"
         if [ $? -ne 0 ]; then
             echo "Failed to build amneziawg-go v0.2.15. Check $INSTALL_LOG for make errors." | tee -a "$INSTALL_LOG"
             exit 1
