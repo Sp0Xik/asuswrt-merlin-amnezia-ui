@@ -7,7 +7,7 @@
 # Full AmneziaWG support (v0.2.15 with H1-H4, S3, S4)
 # Dynamically assigns userN.asp and adds button to VPN tab
 
-VERSION="0.2.2"
+VERSION="0.2.3.1"
 CONFIG_DIR="/jffs/amnezia-ui/configs"
 BINARY="/opt/bin/amneziawg-go"
 CUSTOM_DIR="/jffs/amnezia-ui_custom"
@@ -60,6 +60,27 @@ find_free_asp() {
     echo "user$i.asp"
 }
 
+# Check network connectivity to GitHub
+check_network() {
+    echo "Checking network connectivity to GitHub..." | tee -a "$INSTALL_LOG"
+    ping -c 1 github.com >> "$INSTALL_LOG" 2>&1
+    if [ $? -ne 0 ]; then
+        echo "Cannot ping github.com. Checking DNS..." | tee -a "$INSTALL_LOG"
+        nslookup github.com 8.8.8.8 >> "$INSTALL_LOG" 2>&1
+        if [ $? -ne 0 ]; then
+            echo "DNS resolution failed. Adding temporary DNS..." | tee -a "$INSTALL_LOG"
+            echo "server=8.8.8.8" >> /jffs/configs/dnsmasq.conf.add
+            killall -HUP dnsmasq 2>>"$INSTALL_LOG"
+        fi
+    fi
+    curl -I https://github.com/amnezia-vpn/amneziawg-go >> "$INSTALL_LOG" 2>&1
+    if [ $? -ne 0 ]; then
+        echo "Cannot access GitHub. Network issue or GitHub blocked." | tee -a "$INSTALL_LOG"
+        return 1
+    fi
+    return 0
+}
+
 # Check if binary exists, compile amneziawg-go v0.2.15 or error
 check_binary() {
     if [ ! -x "$BINARY" ]; then
@@ -68,11 +89,9 @@ check_binary() {
             rm -f /opt/tmp/opkg.lock 2>>"$INSTALL_LOG"
         fi
         opkg update >> "$INSTALL_LOG" 2>&1 || { echo "Failed to update opkg. Check Entware repository." | tee -a "$INSTALL_LOG"; exit 1; }
-        # Install build dependencies
         for pkg in make go git git-http; do
             opkg list-installed | grep -q "^$pkg " || { echo "Installing $pkg for compilation..." | tee -a "$INSTALL_LOG"; opkg install "$pkg" >> "$INSTALL_LOG" 2>&1 || { echo "Cannot install $pkg. Check Entware repository or try 'opkg install $pkg' manually." | tee -a "$INSTALL_LOG"; exit 1; }; }
         done
-        # Install runtime dependencies
         for pkg in ipset jq; do
             opkg list-installed | grep -q "^$pkg " || { echo "Installing $pkg for runtime..." | tee -a "$INSTALL_LOG"; opkg install "$pkg" >> "$INSTALL_LOG" 2>&1 || { echo "Cannot install $pkg. Check Entware repository or try 'opkg install $pkg' manually." | tee -a "$INSTALL_LOG"; exit 1; }; }
         done
@@ -85,7 +104,9 @@ check_binary() {
         fi
         echo "Available space: $FREE_SPACE_KB KB" | tee -a "$INSTALL_LOG"
         cd /tmp || { echo "Failed to change to /tmp directory." | tee -a "$INSTALL_LOG"; exit 1; }
+        check_network || { echo "Network check failed. Trying wget fallback..." | tee -a "$INSTALL_LOG"; }
         for attempt in 1 2 3; do
+            echo "Attempting git clone (attempt $attempt/3)..." | tee -a "$INSTALL_LOG"
             git clone --branch v0.2.15 https://github.com/amnezia-vpn/amneziawg-go >> "$INSTALL_LOG" 2>&1
             if [ $? -eq 0 ]; then
                 break
@@ -94,11 +115,22 @@ check_binary() {
             sleep 5
         done
         if [ ! -d /tmp/amneziawg-go ]; then
-            echo "Failed to clone amneziawg-go v0.2.15 after 3 attempts. Check network or GitHub availability." | tee -a "$INSTALL_LOG"
+            echo "Git clone failed after 3 attempts. Trying wget fallback..." | tee -a "$INSTALL_LOG"
+            wget -O /tmp/amneziawg-go.tar.gz https://github.com/amnezia-vpn/amneziawg-go/archive/refs/tags/v0.2.15.tar.gz >> "$INSTALL_LOG" 2>&1
+            if [ $? -eq 0 ]; then
+                tar -xzf /tmp/amneziawg-go.tar.gz -C /tmp >> "$INSTALL_LOG" 2>&1
+                mv /tmp/amneziawg-go-0.2.15 /tmp/amneziawg-go
+            else
+                echo "Wget fallback failed. Check network, DNS, or GitHub availability." | tee -a "$INSTALL_LOG"
+                exit 1
+            fi
+        fi
+        if [ ! -d /tmp/amneziawg-go ]; then
+            echo "Failed to obtain amneziawg-go v0.2.15 after all attempts. Check $INSTALL_LOG." | tee -a "$INSTALL_LOG"
             exit 1
         fi
         cd amneziawg-go || { echo "Failed to change to amneziawg-go directory." | tee -a "$INSTALL_LOG"; exit 1; }
-        make >> "$INSTALL_LOG" 2>&1
+        GOOS=linux GOARCH=arm GOARM=7 make >> "$INSTALL_LOG" 2>&1
         if [ $? -ne 0 ]; then
             echo "Failed to build amneziawg-go v0.2.15. Check $INSTALL_LOG for make errors." | tee -a "$INSTALL_LOG"
             exit 1
@@ -112,12 +144,11 @@ check_binary() {
             echo "Failed to copy amneziawg-go to $BINARY. Check permissions or disk space." | tee -a "$INSTALL_LOG"
             exit 1
         fi
-        rm -rf /tmp/amneziawg-go
+        rm -rf /tmp/amneziawg-go /tmp/amneziawg-go.tar.gz
         if [ ! -x "$BINARY" ]; then
             echo "Failed to build amneziawg-go v0.2.15. Check $INSTALL_LOG, ensure make, go, git are installed via opkg, check /opt space (df -h /opt)." | tee -a "$INSTALL_LOG"
             exit 1
         fi
-        # Remove build dependencies if not used by other addons
         for pkg in make go git git-http; do
             if opkg list-installed | grep -q "^$pkg "; then
                 if check_package_usage "$pkg"; then
@@ -135,28 +166,24 @@ check_binary() {
 check_package_usage() {
     local pkg="$1"
     echo "Checking usage of $pkg..." >> "$UNINSTALL_LOG"
-    # Check if package is a dependency for other installed packages
     if opkg depends "$pkg" | grep -qE "^[a-zA-Z0-9]"; then
         echo "$pkg is a dependency for other packages. Skipping removal." >> "$UNINSTALL_LOG"
         return 1
     fi
-    # Check for Merlin VPN Director or other addons using ipset
     if [ "$pkg" = "ipset" ] && nvram get vpndirector_rulelist | grep -q .; then
         echo "ipset used by VPN Director (nvram vpndirector_rulelist). Skipping removal." >> "$UNINSTALL_LOG"
         return 1
     fi
-    # Check for scripts/addons using make, go, git, git-http, or jq
     if [ "$pkg" = "make" ] || [ "$pkg" = "go" ] || [ "$pkg" = "git" ] || [ "$pkg" = "git-http" ] || [ "$pkg" = "jq" ]; then
         if find /jffs/scripts /jffs/addons -type f -exec grep -qE "$pkg " {} \; 2>/dev/null; then
             echo "$pkg used by other scripts/addons in /jffs/scripts or /jffs/addons. Skipping removal." | tee -a "$UNINSTALL_LOG"
             return 1
         fi
     fi
-    # Safe to remove
     return 0
 }
 
-# Function to generate custom firewall script for selective routing (iptables + dnsmasq for domains)
+# Function to generate custom firewall script for selective routing
 generate_firewall_script() {
     if [ -n "$RULES" ]; then
         FIREWALL_SCRIPT="$CUSTOM_DIR/firewall_client"
@@ -195,7 +222,6 @@ install() {
     check_binary
     mkdir -p "$CONFIG_DIR" "$CUSTOM_DIR" "$WEB_DIR"
     
-    # Find free userN.asp
     ASP_PAGE="$WEB_DIR/$(find_free_asp)"
     echo "Installing Amnezia-UI web interface ($ASP_PAGE)..." | tee -a "$INSTALL_LOG"
     cp /jffs/addons/amnezia-ui/amnezia-ui.asp "$ASP_PAGE" >> "$INSTALL_LOG" 2>&1
@@ -205,7 +231,6 @@ install() {
     fi
     chmod 0644 "$ASP_PAGE"
     
-    # Add button to VPN tab
     echo "Adding Amnezia-UI button to VPN tab (/www/vpn_client.asp)..." | tee -a "$INSTALL_LOG"
     if [ -f /www/vpn_client.asp ]; then
         cp /www/vpn_client.asp /www/vpn_client.asp.bak 2>>"$INSTALL_LOG"
