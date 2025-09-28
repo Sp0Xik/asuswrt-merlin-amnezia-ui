@@ -192,8 +192,8 @@ jobs:
           For detailed installation guides, configuration examples, and troubleshooting, see the [README](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui#readme).
         draft: false
         prerelease: ${{ github.event.inputs.prerelease || false }}
-        make_latest: true
         generate_release_notes: true
+        target_commitish: ${{ github.sha }}
         files: |
           asuswrt-merlin-amnezia-ui-armv7.tar.gz
           asuswrt-merlin-amnezia-ui-aarch64.tar.gz
