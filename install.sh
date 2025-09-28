@@ -8,6 +8,8 @@ CUSTOM_DIR="/jffs/amneziaui_custom"
 OVERLAY_DIR="/jffs/overlay/www"
 STOCK_WWW="/www"
 VPN_ASP="Advanced_VPN_Content.asp"
+VPN_TABS_ASP="VPN.asp"
+FIREWALL_ASP="Advanced_Firewall_Content.asp"
 echo "Installing Amnezia-UI..."
 # Check JFFS
 if [ ! -d "/jffs" ]; then
@@ -79,6 +81,6 @@ fi
 "$ADDON_DIR/amnezia-ui" web start || "$SCRIPT_DIR/amnezia-ui" web start || true
 # Cleanup
 rm -f "/tmp/$PKG_NAME"; rm -rf /tmp/addons
-echo "\n🎉 Installation complete!"
+printf "\n🎉 Installation complete!\n"
 echo "Web interface: http://$(nvram get lan_ipaddr 2>/dev/null || echo 192.168.1.1):8080"
-echo "ASP page: http://router-ip/amneziaui/asp/index.asp (via VPN menu button)"
+echo "Mini-UI: http://router-ip/user_amneziaui.asp (now also in VPN tab list)"
