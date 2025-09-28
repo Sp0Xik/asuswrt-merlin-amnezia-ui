@@ -1,0 +1,19 @@
+#!/bin/sh
+
+# AmneziWG-Go Binary Placeholder
+# This is a placeholder for the actual AmneziWG-Go binary
+# 
+# The actual binary should be compiled from the AmneziWG-Go source
+# and replace this placeholder during installation
+#
+# Binary will be architecture-specific:
+# - ARMv7 (32-bit) for older routers
+# - ARMv8/AArch64 (64-bit) for newer routers  
+# - MIPS for some router models
+#
+# Install script should detect architecture and download appropriate binary
+
+echo "AmneziWG-Go binary placeholder"
+echo "This file should be replaced with the actual AmneziWG-Go binary during installation"
+echo "Architecture detection and binary replacement required"
+exit 1
