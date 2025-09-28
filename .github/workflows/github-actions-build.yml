@@ -13,17 +13,14 @@ on:
         description: 'Mark as pre-release'
         type: boolean
         default: false
-
 permissions:
   contents: write
   packages: write
   actions: read
-
 env:
   AMNEZIAWG_VERSION: "v0.2.15"
   BUILD_DATE: ${{ github.run_number }}
   COMMIT_SHA: ${{ github.sha }}
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -131,15 +128,14 @@ jobs:
             continue
           fi
           
-          # Create version info
-          cat > package-$arch/addons/amneziaui/version.info << EOF
-VERSION=${{ github.event.inputs.version || github.ref_name }}
-BUILD_DATE=$(date -u "+%Y-%m-%d %H:%M:%S UTC")
-BUILD_NUMBER=${{ env.BUILD_DATE }}
-COMMIT_SHA=${{ env.COMMIT_SHA }}
-AMNEZIAWG_VERSION=${{ env.AMNEZIAWG_VERSION }}
-ARCHITECTURE=$arch
-EOF
+          # Create version info (avoid YAML parsing issues)
+          VERSION_REF="${{ github.event.inputs.version || github.ref_name }}"
+          echo "VERSION=$VERSION_REF" > package-$arch/addons/amneziaui/version.info
+          echo "BUILD_DATE=$(date -u "+%Y-%m-%d %H:%M:%S UTC")" >> package-$arch/addons/amneziaui/version.info
+          echo "BUILD_NUMBER=${{ env.BUILD_DATE }}" >> package-$arch/addons/amneziaui/version.info
+          echo "COMMIT_SHA=${{ env.COMMIT_SHA }}" >> package-$arch/addons/amneziaui/version.info
+          echo "AMNEZIAWG_VERSION=${{ env.AMNEZIAWG_VERSION }}" >> package-$arch/addons/amneziaui/version.info
+          echo "ARCHITECTURE=$arch" >> package-$arch/addons/amneziaui/version.info
           
           # Create the final architecture-specific package
           cd package-$arch
