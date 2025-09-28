@@ -1,6 +1,7 @@
 #!/bin/sh
 # Multi-architecture installer for Amnezia-UI
 # Auto-detects router architecture and downloads appropriate package
+
 REPO="Sp0Xik/asuswrt-merlin-amnezia-ui"
 ADDON_DIR="/jffs/addons/amneziaui"
 SCRIPT_DIR="/jffs/scripts"
@@ -26,7 +27,7 @@ case "$ARCH" in
         echo "Using ARMv7 package"
         ;;
     "aarch64"|"arm64")
-        PKG_ARCH="aarch64" 
+        PKG_ARCH="aarch64"
         echo "Using AArch64/ARM64 package"
         ;;
     "mips"|"mipsel")
@@ -55,6 +56,7 @@ if [ ! -f "$PKG_NAME" ]; then
     echo "Error: Package file not found after download"
     exit 1
 fi
+
 echo "Downloaded $(ls -lh $PKG_NAME | awk '{print $5}') package"
 
 # Extract
@@ -139,14 +141,54 @@ if [ -f "$ADDON_DIR/version.info" ]; then
     cat "$ADDON_DIR/version.info"
 fi
 
+# Run initial addon setup and auto-start
+echo "\n🚀 Initializing addon..."
+$SCRIPT_DIR/amnezia-ui install
+
+# Create services-start hook for auto-startup after reboot
+echo "Creating auto-startup hooks..."
+cat > "$SCRIPT_DIR/services-start" << 'AUTOSTART_EOF'
+#!/bin/sh
+# Auto-start Amnezia-UI on router startup
+
+# Wait for system to be ready
+sleep 10
+
+# Start Amnezia-UI if installed
+if [ -f "/jffs/scripts/amnezia-ui" ]; then
+    logger "Starting Amnezia-UI addon..."
+    /jffs/scripts/amnezia-ui web start
+    logger "Amnezia-UI web interface started"
+fi
+AUTOSTART_EOF
+
+chmod 755 "$SCRIPT_DIR/services-start"
+
+# Also create firewall-start hook for custom scripts
+cat > "$SCRIPT_DIR/firewall-start" << 'FIREWALL_EOF'
+#!/bin/sh
+# Amnezia-UI firewall rules
+
+# Run custom firewall script if exists
+if [ -f "/jffs/amneziaui_custom/firewall-start" ]; then
+    . "/jffs/amneziaui_custom/firewall-start"
+fi
+FIREWALL_EOF
+
+chmod 755 "$SCRIPT_DIR/firewall-start"
+
+# Start web interface immediately
+echo "Starting web interface..."
+$SCRIPT_DIR/amnezia-ui web start
+
 # Cleanup
 rm -f "/tmp/$PKG_NAME"
 rm -rf /tmp/addons
 
 echo "\n🎉 Installation complete!"
-echo "\nNext steps:"
-echo "1. Run: amnezia-ui install"
-echo "2. Add configuration: amnezia-ui add /path/to/config.conf"
-echo "3. Start interface: amnezia-ui start amnezia0"
-echo "4. Start web UI: amnezia-ui web start"
+echo "\n✨ Amnezia-UI is now running!"
+echo "🌐 Web interface: http://$(nvram get lan_ipaddr):8080"
+echo "📱 Mobile friendly interface with ASP support"
+echo "🔄 Auto-starts after reboot"
 echo "\nFor help: amnezia-ui --help"
+echo "For configuration: Access web interface or use CLI commands"
