@@ -1,155 +1,129 @@
 #!/bin/sh
-# amnezia-ui-universal-v31.sh
-# Version 3.1.0 — Universal launcher for Amnezia-UI (Web + CLI) on ASUSWRT-Merlin (stock) and gnuton
-# Supports AmneziaWG 1.5 features incl. CPS and I1–I5 presets. Works on ARMv7/ARMv8/MIPS.
 
-set -eu
-
-APP_NAME="amnezia-ui"
-APP_VER="3.1.0"
-LOG_FILE="/tmp/${APP_NAME}.log"
-SCRIPT_PATH="/jffs/scripts/${APP_NAME}"
-ADDONS_DIR="/jffs/addons/${APP_NAME}"
-BIN_DIR="${ADDONS_DIR}/bin"
-WWW_DIR="${ADDONS_DIR}/www"
-CONF_DIR="${ADDONS_DIR}/conf"
-DATA_DIR="/opt/${APP_NAME}"
-
-# Detect Merlin or gnuton
-is_gnuton() {
-  nvram get buildno 2>/dev/null | grep -qi gnuton || nvram get gnuton_fork 2>/dev/null | grep -qi 1
-}
+APP_NAME="Amnezia UI Universal"
+APP_VER="v3.1.0"
+CONF_DIR="/jffs/amnezia-ui/configs"
+LOG_FILE="/jffs/amnezia-ui/amnezia.log"
+WEB_DIR="/jffs/amnezia-ui/web"
+WEB_PID_FILE="/var/run/amnezia-web.pid"
 
 log() {
-  echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
+  echo "$(date '+%Y-%m-%d %H:%M:%S'): $*" >>"$LOG_FILE"
 }
 
 usage() {
   cat <<EOF
-${APP_NAME} ${APP_VER}
-Usage: ${SCRIPT_PATH} <command> [args]
+Usage: $0 [COMMAND] [OPTIONS]
 
 Commands:
-  install                 Install UI, backend and dependencies
-  uninstall               Remove UI and binaries, keep logs
-  start <iface>           Start AmneziaWG on iface (e.g., amnezia0)
-  stop <iface>            Stop iface
-  stop-all                Stop all ${APP_NAME} interfaces
-  status [iface]          Show status of one/all interfaces
-  add <config-file>       Add config from WireGuard/AmneziaWG file
-  web [start|stop|status] Control embedded web UI backend
-  log                     Tail runtime log
-  version                 Show version/components
+  install        Install Amnezia UI
+  uninstall      Uninstall Amnezia UI
+  start [NAME]   Start interface (default: amnezia0)
+  stop [NAME]    Stop interface (default: amnezia0)
+  stop-all       Stop all interfaces
+  status [NAME]  Show interface status
+  add FILE       Add config file
+  web [start|stop|status]  Manage web backend
+  log            Show logs
+  version        Show version
+  help           Show this help
 
-Notes:
-- Supports AmneziaWG 1.5 CPS and presets I1–I5 (S1–S4, H1–H4, CPS).
-- Compatible with ASUSWRT-Merlin stock and gnuton fork.
 EOF
 }
 
-require_entware() {
-  if ! command -v opkg >/dev/null 2>&1; then
-    log "Entware (opkg) not found. Please install Entware first." && return 1
-  fi
-}
-
 ensure_dirs() {
-  mkdir -p "$BIN_DIR" "$WWW_DIR" "$CONF_DIR" "$DATA_DIR"
-}
-
-install_bins() {
-  # Expect prebuilt amneziawg-go and helpers delivered via installer
-  for b in amneziawg-go wg wg-quick jq ipset; do
-    command -v "$b" >/dev/null 2>&1 || true
-  done
-}
-
-web_backend_start() {
-  if [ -f "$BIN_DIR/ui-backend" ]; then
-    if ! pidof ui-backend >/dev/null 2>&1; then
-      "$BIN_DIR/ui-backend" --www "$WWW_DIR" --conf "$CONF_DIR" --data "$DATA_DIR" >>"$LOG_FILE" 2>&1 &
-      sleep 1
-    fi
-    log "Web backend: $(web_backend_status)"
-  else
-    log "Web backend binary missing: $BIN_DIR/ui-backend"
-  fi
-}
-
-web_backend_stop() {
-  pkill -f "$BIN_DIR/ui-backend" 2>/dev/null || true
-  log "Web backend: stopped"
-}
-
-web_backend_status() {
-  if pidof ui-backend >/dev/null 2>&1; then echo running; else echo stopped; fi
-}
-
-apply_preset_env() {
-  # Map presets I1–I5 to env vars for amneziawg-go (CPS + S/H keys)
-  PRESET=${1:-}
-  case "$PRESET" in
-    I1) export AWG_PRESET=I1 CPS=0 H1=1 H2=2 ;;
-    I2) export AWG_PRESET=I2 CPS=1 I=2 ;;
-    I3) export AWG_PRESET=I3 CPS=2 I=3 ;;
-    I4) export AWG_PRESET=I4 CPS=3 I=4 ;;
-    I5) export AWG_PRESET=I5 CPS=4 I=5 ;;
-    *) : ;; # no-op
-  esac
+  [ -d "$CONF_DIR" ] || mkdir -p "$CONF_DIR"
+  [ -d "$WEB_DIR" ] || mkdir -p "$WEB_DIR"
+  [ -d "$(dirname "$LOG_FILE")" ] || mkdir -p "$(dirname "$LOG_FILE")"
 }
 
 cmd_install() {
-  require_entware || exit 1
-  log "Installing ${APP_NAME} ${APP_VER}..."
+  log "Installing Amnezia UI..."
   ensure_dirs
-  install_bins
-
-  # Register script
-  cp -f "$0" "$SCRIPT_PATH" 2>/dev/null || true
-  chmod 0755 "$SCRIPT_PATH"
-
-  # Create web hook in VPN client page via www assets (prepackaged)
-  touch "$WWW_DIR/index.html" "$CONF_DIR/.keep"
-
-  # Web backend service via services-start
-  SERVICES_START="/jffs/scripts/services-start"
-  if ! grep -q "$APP_NAME web start" "$SERVICES_START" 2>/dev/null; then
-    {
-      echo "#!/bin/sh"
-      echo "/jffs/scripts/${APP_NAME} web start"
-    } >>"$SERVICES_START" 2>/dev/null || true
-    chmod 0755 "$SERVICES_START" 2>/dev/null || true
+  
+  # Download amneziawg-go if not exists
+  if [ ! -f "/jffs/amnezia-ui/amneziawg-go" ]; then
+    log "Downloading amneziawg-go..."
+    curl -L "https://github.com/amnezia-vpn/amneziawg-go/releases/latest/download/amneziawg-go-linux-mipsle" -o "/jffs/amnezia-ui/amneziawg-go" 2>>"$LOG_FILE"
+    chmod +x "/jffs/amnezia-ui/amneziawg-go"
   fi
-
-  web_backend_start
-  log "Install complete"
+  
+  # Create symlink
+  ln -sf "/jffs/amnezia-ui/amneziawg-go" "/usr/bin/amneziawg-go" 2>>"$LOG_FILE"
+  
+  log "Installation completed"
 }
 
 cmd_uninstall() {
-  log "Uninstalling ${APP_NAME}..."
-  web_backend_stop
-  rm -rf "$ADDONS_DIR"
-  sed -i "/${APP_NAME} web start/d" /jffs/scripts/services-start 2>/dev/null || true
-  log "Uninstalled"
+  log "Uninstalling Amnezia UI..."
+  cmd_stop_all
+  rm -rf "/jffs/amnezia-ui" 2>>"$LOG_FILE"
+  rm -f "/usr/bin/amneziawg-go" 2>>"$LOG_FILE"
+  log "Uninstallation completed"
+}
+
+web_backend_start() {
+  if [ -f "$WEB_PID_FILE" ] && kill -0 "$(cat "$WEB_PID_FILE")" 2>/dev/null; then
+    echo "Web backend already running"
+    return
+  fi
+  
+  log "Starting web backend..."
+  nohup sh -c 'cd "$WEB_DIR" && python3 -m http.server 8080' >"$WEB_DIR/web.log" 2>&1 &
+  echo $! >"$WEB_PID_FILE"
+  echo "Web backend started on port 8080"
+}
+
+web_backend_stop() {
+  if [ -f "$WEB_PID_FILE" ]; then
+    PID=$(cat "$WEB_PID_FILE")
+    if kill "$PID" 2>/dev/null; then
+      log "Web backend stopped"
+      rm -f "$WEB_PID_FILE"
+    else
+      log "Web backend was not running"
+      rm -f "$WEB_PID_FILE"
+    fi
+  else
+    echo "Web backend is not running"
+  fi
+}
+
+web_backend_status() {
+  if [ -f "$WEB_PID_FILE" ] && kill -0 "$(cat "$WEB_PID_FILE")" 2>/dev/null; then
+    echo "Web backend is running (PID: $(cat "$WEB_PID_FILE"))"
+  else
+    echo "Web backend is not running"
+  fi
 }
 
 iface_up() {
-  IFACE="$1"
-  CONF_FILE="$CONF_DIR/${IFACE}.conf"
-  if [ ! -f "$CONF_FILE" ]; then
-    log "Config not found: $CONF_FILE"; return 1
-  fi
-  # Extract preset if provided in config meta
-  PRESET=$(grep -E '^I[1-5]$' "$CONF_FILE" 2>/dev/null | tail -n1 || true)
-  apply_preset_env "$PRESET"
-  amneziawg-go up "$CONF_FILE" >>"$LOG_FILE" 2>&1
-  ip link show "$IFACE" >/dev/null 2>&1 && log "Started $IFACE" || log "Failed to start $IFACE"
+  NAME="$1"
+  [ -n "$NAME" ] || { log "Interface name required"; return 1; }
+  
+  CONF_FILE="$CONF_DIR/${NAME}.conf"
+  [ -f "$CONF_FILE" ] || { log "Config not found: $CONF_FILE"; return 1; }
+  
+  log "Starting interface: $NAME"
+  ip link add dev "$NAME" type wireguard 2>>"$LOG_FILE"
+  amneziawg-go setconf "$NAME" "$CONF_FILE" 2>>"$LOG_FILE"
+  ip link set up dev "$NAME" 2>>"$LOG_FILE"
+  
+  # Set IP from config
+  IP=$(grep '^Address' "$CONF_FILE" | head -n1 | cut -d' ' -f3)
+  [ -n "$IP" ] && ip addr add "$IP" dev "$NAME" 2>>"$LOG_FILE"
+  
+  log "Interface $NAME started"
 }
 
 iface_down() {
-  IFACE="$1"
-  amneziawg-go down "$IFACE" >>"$LOG_FILE" 2>&1 || true
-  log "Stopped $IFACE"
+  NAME="$1"
+  [ -n "$NAME" ] || { log "Interface name required"; return 1; }
+  
+  log "Stopping interface: $NAME"
+  ip link set down dev "$NAME" 2>>"$LOG_FILE"
+  ip link delete dev "$NAME" 2>>"$LOG_FILE"
+  log "Interface $NAME stopped"
 }
 
 cmd_add() {
@@ -202,4 +176,4 @@ case "${1:-}" in
   log) tail -f "$LOG_FILE" ;;
   version) cmd_version ;;
   -h|--help|help|*) usage ;;
- esac
+esac
