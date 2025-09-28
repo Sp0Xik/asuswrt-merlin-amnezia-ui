@@ -8,47 +8,67 @@ WEB_DIR="/jffs/amnezia-ui/web"
 WEB_PID_FILE="/var/run/amnezia-web.pid"
 
 log() {
-  echo "$(date '+%Y-%m-%d %H:%M:%S'): $*" >>"$LOG_FILE"
+  echo "$(date '+%Y-%m-%d %H:%M:%S'): $*" >> $LOG_FILE
 }
 
 usage() {
-  cat <<EOF
-Usage: $0 [COMMAND] [OPTIONS]
-
-Commands:
-  install        Install Amnezia UI
-  uninstall      Uninstall Amnezia UI
-  start [NAME]   Start interface (default: amnezia0)
-  stop [NAME]    Stop interface (default: amnezia0)
-  stop-all       Stop all interfaces
-  status [NAME]  Show interface status
-  add FILE       Add config file
-  web [start|stop|status]  Manage web backend
-  log            Show logs
-  version        Show version
-  help           Show this help
-EOF
+  echo "Usage: $0 {install|uninstall|start|stop|stop-all|status|add|web|log|version|help}"
+  echo ""
+  echo "Commands:"
+  echo "  install     - Download and install Amnezia UI"
+  echo "  uninstall   - Remove all Amnezia UI files"
+  echo "  start [interface] - Start interface (default: amnezia0)"
+  echo "  stop [interface]  - Stop interface (default: amnezia0)"
+  echo "  stop-all    - Stop all interfaces"
+  echo "  status [interface] - Show status"
+  echo "  add <config> - Add config file"
+  echo "  web {start|stop|status} - Manage web backend"
+  echo "  log         - Show logs"
+  echo "  version     - Show version"
+  echo "  help        - Show this help"
 }
 
 ensure_dirs() {
-  [ -d "$CONF_DIR" ] || mkdir -p "$CONF_DIR"
-  [ -d "$WEB_DIR" ] || mkdir -p "$WEB_DIR"
-  [ -d "$(dirname "$LOG_FILE")" ] || mkdir -p "$(dirname "$LOG_FILE")"
+  mkdir -p /jffs/amnezia-ui
+  mkdir -p $CONF_DIR
+  mkdir -p $WEB_DIR
+}
+
+download() {
+  URL="$1"
+  FILE="$2"
+  if command -v curl > /dev/null 2>&1; then
+    curl -fsSL "$URL" -o "$FILE"
+  elif command -v wget > /dev/null 2>&1; then
+    wget -qO "$FILE" "$URL"
+  else
+    log "Neither curl nor wget found"
+    return 1
+  fi
 }
 
 cmd_install() {
   log "Installing Amnezia UI..."
   ensure_dirs
   
-  # Download amneziawg-go if not exists
-  if [ ! -f "/jffs/amnezia-ui/amneziawg-go" ]; then
-    log "Downloading amneziawg-go..."
-    curl -L "https://github.com/amnezia-vpn/amneziawg-go/releases/latest/download/amneziawg-go-linux-mipsle" -o "/jffs/amnezia-ui/amneziawg-go" 2>>"$LOG_FILE"
-    chmod +x "/jffs/amnezia-ui/amneziawg-go"
+  log "Downloading amneziawg-go..."
+  ARCH=$(uname -m)
+  case $ARCH in
+    aarch64) ARCH=arm64 ;;
+    armv7l) ARCH=arm ;;
+    x86_64) ARCH=amd64 ;;
+    *) log "Unsupported architecture: $ARCH"; exit 1 ;;
+  esac
+  
+  URL="https://github.com/amnezia-vpn/amneziawg-go/releases/latest/download/amneziawg-go-linux-$ARCH"
+  if ! download "$URL" "/jffs/amnezia-ui/amneziawg-go"; then
+    log "Failed to download amneziawg-go"
+    exit 1
   fi
   
-  # Create symlink
-  ln -sf "/jffs/amnezia-ui/amneziawg-go" "/usr/bin/amneziawg-go" 2>>"$LOG_FILE"
+  chmod +x "/jffs/amnezia-ui/amneziawg-go"
+  
+  ln -sf "/jffs/amnezia-ui/amneziawg-go" "/usr/bin/amneziawg-go"
   
   log "Installation completed"
 }
@@ -56,27 +76,28 @@ cmd_install() {
 cmd_uninstall() {
   log "Uninstalling Amnezia UI..."
   cmd_stop_all
-  rm -rf "/jffs/amnezia-ui" 2>>"$LOG_FILE"
-  rm -f "/usr/bin/amneziawg-go" 2>>"$LOG_FILE"
+  rm -rf "/jffs/amnezia-ui"
+  rm -f "/usr/bin/amneziawg-go"
   log "Uninstallation completed"
 }
 
 web_backend_start() {
-  if [ -f "$WEB_PID_FILE" ] && kill -0 "$(cat "$WEB_PID_FILE")" 2>/dev/null; then
+  if [ -f "$WEB_PID_FILE" ] && kill -0 $(cat "$WEB_PID_FILE") 2> /dev/null; then
     echo "Web backend already running"
     return
   fi
   
   log "Starting web backend..."
-  nohup sh -c 'cd "$WEB_DIR" && python3 -m http.server 8080' >"$WEB_DIR/web.log" 2>&1 &
-  echo $! >"$WEB_PID_FILE"
+  cd $WEB_DIR
+  python3 -m http.server 8080 > $WEB_DIR/web.log 2>&1 &
+  echo $! > $WEB_PID_FILE
   echo "Web backend started on port 8080"
 }
 
 web_backend_stop() {
   if [ -f "$WEB_PID_FILE" ]; then
     PID=$(cat "$WEB_PID_FILE")
-    if kill "$PID" 2>/dev/null; then
+    if kill "$PID" 2> /dev/null; then
       log "Web backend stopped"
       rm -f "$WEB_PID_FILE"
     else
@@ -89,8 +110,8 @@ web_backend_stop() {
 }
 
 web_backend_status() {
-  if [ -f "$WEB_PID_FILE" ] && kill -0 "$(cat "$WEB_PID_FILE")" 2>/dev/null; then
-    echo "Web backend is running (PID: $(cat "$WEB_PID_FILE"))"
+  if [ -f "$WEB_PID_FILE" ] && kill -0 $(cat "$WEB_PID_FILE") 2> /dev/null; then
+    echo "Web backend is running (PID: $(cat $WEB_PID_FILE))"
   else
     echo "Web backend is not running"
   fi
@@ -104,13 +125,12 @@ iface_up() {
   [ -f "$CONF_FILE" ] || { log "Config not found: $CONF_FILE"; return 1; }
   
   log "Starting interface: $NAME"
-  ip link add dev "$NAME" type wireguard 2>>"$LOG_FILE"
-  amneziawg-go setconf "$NAME" "$CONF_FILE" 2>>"$LOG_FILE"
-  ip link set up dev "$NAME" 2>>"$LOG_FILE"
+  ip link add dev "$NAME" type wireguard 2>> $LOG_FILE
+  amneziawg-go setconf "$NAME" "$CONF_FILE" 2>> $LOG_FILE
+  ip link set up dev "$NAME" 2>> $LOG_FILE
   
-  # Set IP from config
   IP=$(grep '^Address' "$CONF_FILE" | head -n1 | cut -d' ' -f3)
-  [ -n "$IP" ] && ip addr add "$IP" dev "$NAME" 2>>"$LOG_FILE"
+  [ -n "$IP" ] && ip addr add "$IP" dev "$NAME" 2>> $LOG_FILE
   
   log "Interface $NAME started"
 }
@@ -120,8 +140,8 @@ iface_down() {
   [ -n "$NAME" ] || { log "Interface name required"; return 1; }
   
   log "Stopping interface: $NAME"
-  ip link set down dev "$NAME" 2>>"$LOG_FILE"
-  ip link delete dev "$NAME" 2>>"$LOG_FILE"
+  ip link set down dev "$NAME" 2>> $LOG_FILE
+  ip link delete dev "$NAME" 2>> $LOG_FILE
   log "Interface $NAME stopped"
 }
 
@@ -138,20 +158,20 @@ cmd_add() {
 cmd_status() {
   IFACE="${1:-}"
   if [ -n "$IFACE" ]; then
-    ip link show "$IFACE" >/dev/null 2>&1 && echo "$IFACE: UP" || echo "$IFACE: DOWN"
-    amneziawg-go show "$IFACE" 2>/dev/null || true
+    ip link show "$IFACE" > /dev/null 2>&1 && echo "$IFACE: UP" || echo "$IFACE: DOWN"
+    amneziawg-go show "$IFACE" 2> /dev/null || true
   else
-    for f in "$CONF_DIR"/*.conf 2>/dev/null; do
+    for f in "$CONF_DIR"/*.conf 2> /dev/null; do
       [ -f "$f" ] || continue
       n=$(basename "$f" .conf)
-      ip link show "$n" >/dev/null 2>&1 && s=UP || s=DOWN
+      ip link show "$n" > /dev/null 2>&1 && s=UP || s=DOWN
       echo "$n: $s"
     done
   fi
 }
 
 cmd_stop_all() {
-  for f in "$CONF_DIR"/*.conf 2>/dev/null; do
+  for f in "$CONF_DIR"/*.conf 2> /dev/null; do
     [ -f "$f" ] || continue
     n=$(basename "$f" .conf)
     iface_down "$n"
@@ -160,7 +180,7 @@ cmd_stop_all() {
 
 cmd_version() {
   echo "${APP_NAME} ${APP_VER}"
-  amneziawg-go -v 2>/dev/null || true
+  amneziawg-go -v 2> /dev/null || true
 }
 
 case "${1:-}" in
