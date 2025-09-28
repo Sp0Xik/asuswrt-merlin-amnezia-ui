@@ -1,7 +1,6 @@
 #!/bin/sh
 # Multi-architecture installer for Amnezia-UI
 # Auto-detects router architecture and downloads appropriate package
-
 REPO="Sp0Xik/asuswrt-merlin-amnezia-ui"
 ADDON_DIR="/jffs/addons/amneziaui"
 SCRIPT_DIR="/jffs/scripts"
@@ -73,10 +72,16 @@ if [ ! -d "/tmp/addons/amneziaui" ]; then
     exit 1
 fi
 
-# Move files to correct locations
+# Move files to correct locations with better error handling
 echo "Installing files..."
-mv /tmp/addons/amneziaui/* "$ADDON_DIR/" 2>/dev/null || {
-    echo "Error: Failed to move addon files"
+# Use cp with recursive flag and then remove source, which is more reliable than mv with glob
+cp -r /tmp/addons/amneziaui/* "$ADDON_DIR/" 2>/dev/null || {
+    echo "Error: Failed to copy addon files"
+    echo "Debug information:"
+    echo "Source directory contents:"
+    ls -la /tmp/addons/amneziaui/ 2>/dev/null || echo "Source directory not accessible"
+    echo "Target directory: $ADDON_DIR"
+    echo "Target directory exists: $([ -d "$ADDON_DIR" ] && echo 'Yes' || echo 'No')"
     exit 1
 }
 
