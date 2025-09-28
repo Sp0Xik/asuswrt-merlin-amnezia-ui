@@ -55,7 +55,6 @@ if [ ! -f "$PKG_NAME" ]; then
     echo "Error: Package file not found after download"
     exit 1
 fi
-
 echo "Downloaded $(ls -lh $PKG_NAME | awk '{print $5}') package"
 
 # Extract
@@ -98,6 +97,28 @@ chmod 0755 "$ADDON_DIR/"*
 
 # Create custom hooks directory
 mkdir -p "$CUSTOM_DIR"
+
+# Merlin firmware detection and .asusrouter marker creation (YazFi/Diversion/XRAYUI pattern)
+echo "Checking firmware compatibility..."
+FIRMWARE_INFO=$(uname -a 2>/dev/null || echo "unknown")
+if echo "$FIRMWARE_INFO" | grep -qi "merlin"; then
+    echo "✓ Merlin firmware detected: Creating compatibility marker"
+    if [ ! -f "/jffs/.asusrouter" ]; then
+        echo "Creating /jffs/.asusrouter marker file for addon compatibility..."
+        touch "/jffs/.asusrouter" 2>/dev/null || {
+            echo "Warning: Could not create /jffs/.asusrouter marker file"
+            echo "You may need to create it manually: touch /jffs/.asusrouter"
+        }
+        if [ -f "/jffs/.asusrouter" ]; then
+            echo "✓ Compatibility marker created successfully"
+        fi
+    else
+        echo "✓ Compatibility marker already exists"
+    fi
+else
+    echo "ⓘ Non-Merlin firmware detected - skipping .asusrouter marker creation"
+    echo "  If you encounter addon compatibility issues, manually create: touch /jffs/.asusrouter"
+fi
 
 # Verify installation
 echo "Verifying installation..."
