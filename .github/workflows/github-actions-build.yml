@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g., v3.2.2)'
+        description: 'Release version (e.g., v3.2.3)'
         required: true
-        default: 'v3.2.2'
+        default: 'v3.2.3'
       prerelease:
         description: 'Mark as pre-release'
         type: boolean
@@ -90,29 +90,39 @@ jobs:
     - name: Download all artifacts
       uses: actions/download-artifact@v4
       
-    - name: Create amnezia-ui-package.tar.gz
+    - name: Create clean amnezia-ui-package.tar.gz
       run: |
+        # Create clean package directory structure
         mkdir -p package/addons/amneziaui
         
-        # Copy the main addons structure
-        cp -r addons/amneziaui/* package/addons/amneziaui/
+        # Copy main script and make executable
+        cp addons/amneziaui/amnezia-ui package/addons/amneziaui/
+        chmod +x package/addons/amneziaui/amnezia-ui
         
-        # Make sure directories exist
-        mkdir -p package/addons/amneziaui/web
-        mkdir -p package/addons/amneziaui/configs
+        # Copy web interface files if they exist
+        if [ -d "addons/amneziaui/web" ]; then
+          cp -r addons/amneziaui/web package/addons/amneziaui/
+        else
+          mkdir -p package/addons/amneziaui/web
+        fi
         
-        # Replace the placeholder amneziawg-go with the actual ARM64 binary (default choice)
+        # Copy config files if they exist
+        if [ -d "addons/amneziaui/configs" ]; then
+          cp -r addons/amneziaui/configs package/addons/amneziaui/
+        else
+          mkdir -p package/addons/amneziaui/configs
+        fi
+        
+        # Add the ARM64 binary as default (most common modern architecture)
         if [ -f "amneziawg-go-aarch64/amneziawg-go" ]; then
           cp amneziawg-go-aarch64/amneziawg-go package/addons/amneziaui/amneziawg-go
           chmod +x package/addons/amneziaui/amneziawg-go
+          echo "Using ARM64/AArch64 binary"
         else
           echo "Warning: ARM64 binary not found, using ARMv7"
           cp amneziawg-go-armv7/amneziawg-go package/addons/amneziaui/amneziawg-go
           chmod +x package/addons/amneziaui/amneziawg-go
         fi
-        
-        # Ensure main script is executable
-        chmod +x package/addons/amneziaui/amnezia-ui
         
         # Create version info
         cat > package/addons/amneziaui/version.info << EOF
@@ -123,44 +133,17 @@ jobs:
         AMNEZIAWG_VERSION=${{ env.AMNEZIAWG_VERSION }}
         EOF
         
-        # Create the package
+        # Create the final package (ONLY this one archive)
         cd package
         tar -czf ../amnezia-ui-package.tar.gz addons/
         cd ..
         
         # Verify package structure
-        echo "Package contents:"
+        echo "Final package contents:"
         tar -tzf amnezia-ui-package.tar.gz
         
-    - name: Create individual arch packages (legacy support)
-      run: |
-        # Create ARMv7 package
-        mkdir -p legacy-armv7/addons/amneziaui
-        cp -r addons/amneziaui/* legacy-armv7/addons/amneziaui/
-        if [ -f "amneziawg-go-armv7/amneziawg-go" ]; then
-          cp amneziawg-go-armv7/amneziawg-go legacy-armv7/addons/amneziaui/amneziawg-go
-          chmod +x legacy-armv7/addons/amneziaui/amneziawg-go
-        fi
-        chmod +x legacy-armv7/addons/amneziaui/amnezia-ui
-        cd legacy-armv7
-        tar -czf ../amnezia-ui-armv7-package.tar.gz addons/
-        cd ..
-        
-        # Create ARM64 package  
-        mkdir -p legacy-aarch64/addons/amneziaui
-        cp -r addons/amneziaui/* legacy-aarch64/addons/amneziaui/
-        if [ -f "amneziawg-go-aarch64/amneziawg-go" ]; then
-          cp amneziawg-go-aarch64/amneziawg-go legacy-aarch64/addons/amneziaui/amneziawg-go
-          chmod +x legacy-aarch64/addons/amneziaui/amneziawg-go
-        fi
-        chmod +x legacy-aarch64/addons/amneziaui/amnezia-ui
-        cd legacy-aarch64
-        tar -czf ../amnezia-ui-aarch64-package.tar.gz addons/
-        cd ..
-        
-    - name: Calculate checksums
-      run: |
-        sha256sum *.tar.gz > checksums.txt
+        # Calculate checksum
+        sha256sum amnezia-ui-package.tar.gz > amnezia-ui-package.tar.gz.sha256
         
     - name: Create Release
       uses: softprops/action-gh-release@v1
@@ -199,11 +182,11 @@ jobs:
           
           ✨ **What's New in ${{ github.event.inputs.version || github.ref_name }}**
           
-          • 📁 **Updated package structure**: Clean `addons/amneziaui/` layout according to new repository structure
-          • 🔧 **Verified components**: All required files (amnezia-ui, amneziawg-go, web/, configs/) included
-          • 🛠️ **Install script compatibility**: Updated to work with new structure
-          • 📝 **Updated documentation**: README reflects new repository organization
-          • 🧪 **Installation testing**: Verified install.sh works correctly
+          • 🎯 **Clean package structure**: Single `amnezia-ui-package.tar.gz` with proper layout
+          • 🔧 **Verified components**: All required files included in clean structure
+          • 🛠️ **Install script compatibility**: Updated to work with clean structure
+          • 📝 **Simplified workflow**: No more intermediate binary archives
+          • 🧪 **Installation testing**: Verified install.sh works correctly with clean archive
           
           🎯 **Features**
           
@@ -252,9 +235,7 @@ jobs:
         target_commitish: ${{ github.sha }}
         files: |
           amnezia-ui-package.tar.gz
-          amnezia-ui-armv7-package.tar.gz
-          amnezia-ui-aarch64-package.tar.gz
-          checksums.txt
+          amnezia-ui-package.tar.gz.sha256
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         
