@@ -1,164 +1,104 @@
-# Amnezia-UI for ASUSWRT-Merlin
+# Amnezia-UI v3.1 — ASUSWRT-Merlin plugin (Merlin + gnuton)
 
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
-![Platform](https://img.shields.io/badge/Platform-ASUSWRT--Merlin-blue.svg)
-![Version](https://img.shields.io/badge/Version-Universal-green.svg)
+Badges: MIT | Platform: ASUSWRT-Merlin | Version: v3.1.0
 
-## Description
+Description
+Amnezia-UI integrates AmneziaWG (WireGuard with DPI-bypass) into the router Web UI. Fully compatible with ASUSWRT-Merlin stock and gnuton’s fork. Supports AmneziaWG 1.5 CPS and presets I1–I5 (S1–S4, H1–H4 headers).
 
-**Amnezia-UI** is a user-friendly plugin for ASUSWRT-Merlin routers that integrates AmneziaWG (WireGuard with advanced obfuscation) directly into your router's web interface. Works with both original ASUSWRT-Merlin and gnuton's fork.
+Key Features
+- Web UI button in VPN Client table; easy add/start/stop configs
+- AmneziaWG 1.5: CPS on/off, presets I1–I5, S1–S4, H1–H4
+- Selective routing: per-domain/IP lists with ipset
+- Universal CPU: ARMv7, ARMv8, MIPS
+- One-line install and CLI tooling
 
-## Key Features
+Compatibility
+- Firmware: 3004.388.x+ (Merlin and gnuton)
+- Tested models: RT-AX88U, RT-AX86U, TUF-AX5400, RT-AC68U and others
+- Works alongside: VPN Director, YazFi, Diversion, Skynet
 
-- **Easy Web Interface**: Manage AmneziaWG connections directly from your router's admin panel
-- **Advanced Obfuscation**: Full support for S1/S2/S3/S4 keys and H1-H4 header obfuscation to bypass VPN blocks
-- **Selective Routing**: Route specific websites or IP addresses through VPN while keeping local traffic direct
-- **Universal Compatibility**: Works on ARMv7, ARMv8, and MIPS architectures
-- **One-Click Installation**: Simple installer script handles everything automatically
-
-## Compatibility
-
-- **Firmware**: ASUSWRT-Merlin 3004.388.x and newer (including gnuton's fork)
-- **Routers**: TUF-AX5400, RT-AX88U, RT-AX86U, RT-AC68U, and more
-- **Other Addons**: Compatible with VPN Director, YazFi, Diversion, and other popular plugins
-
-## Requirements
-
+Requirements
 - ASUSWRT-Merlin firmware installed
-- Entware package manager (usually pre-installed)
-- 50MB free space in /opt during installation
-- Internet connection for downloading components
+- Entware (opkg)
+- ~50 MB free in /opt during install
+- Internet access to fetch components
 
-## Quick Installation
+Quick Installation
+One-line (recommended):
+curl -sSL https://raw.githubusercontent.com/Sp0Xik/asuswrt-merlin-amnezia-ui/main/install-universal-v31.sh | sh
 
-### One-Line Installation (Recommended)
-
-```bash
-# Download and run the universal installer
-curl -sSL https://raw.githubusercontent.com/Sp0Xik/asuswrt-merlin-amnezia-ui/main/install-universal.sh | sh
-```
-
-### Manual Installation
-
-```bash
-# Install dependencies
+Manual installation:
+1) Dependencies
 opkg update
-opkg install make go git git-http ipset jq
+opkg install jq ipset git-http ca-bundle
 
-# Download and extract
+2) Fetch release (CI artifact tarball)
 wget -O /tmp/asuswrt-merlin-amnezia-ui.tar.gz \
   https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/asuswrt-merlin-amnezia-ui.tar.gz
-tar -xzf /tmp/asuswrt-merlin-amnezia-ui.tar.gz -C /jffs/addons
+mkdir -p /jffs/addons
+cd /jffs/addons && tar -xzf /tmp/asuswrt-merlin-amnezia-ui.tar.gz
 
-# Install and configure
+3) Install and enable Web UI
 mv /jffs/addons/amnezia-ui/amnezia-ui /jffs/scripts/amnezia-ui
 chmod 0755 /jffs/scripts/amnezia-ui
-sh /jffs/scripts/amnezia-ui install
-
-# Restart web interface
+/jffs/scripts/amnezia-ui install
 service restart_httpd
-```
 
-## How to Use
+How to Use
+- Open router Web UI → VPN → VPN Client → press “Amnezia-UI”
+- Fill fields:
+  Interface: amnezia0
+  Private/Public keys, Endpoint host:port, AllowedIPs (0.0.0.0/0 for all)
+  Optional: S1–S4, H1–H4, CPS or preset I1–I5
+- Add Config → Start/Stop
 
-1. After installation, navigate to **VPN → VPN Client** in your router's web interface
-2. Click the **"Amnezia-UI"** button that appears in the VPN client table
-3. Fill in your VPN connection details:
-   - **Interface Name**: Choose a name (e.g., "amnezia0")
-   - **Private Key**: Your client private key
-   - **Public Key**: Server public key
-   - **Endpoint**: Server address and port (e.g., "vpn.example.com:51820")
-   - **Allowed IPs**: Which traffic to route ("0.0.0.0/0" for all traffic)
-4. Optional: Configure obfuscation keys (S1, S2, S3, S4) if your server supports them
-5. Optional: Set up selective routing for specific websites or IP addresses
-6. Click **"Add Config"** to save your settings
-7. Use Start/Stop buttons to control your VPN connection
+CLI
+Start:   /jffs/scripts/amnezia-ui start amnezia0
+Stop:    /jffs/scripts/amnezia-ui stop amnezia0
+Status:  /jffs/scripts/amnezia-ui status [iface]
+Add:     /jffs/scripts/amnezia-ui add /jffs/addons/amnezia-ui/conf/my.conf
+Logs:    tail -f /tmp/amnezia-ui.log
+Web:     /jffs/scripts/amnezia-ui web start|stop|status
 
-## Configuration Example
-
-```ini
+Example (WG/AmneziaWG)
 [Interface]
-PrivateKey = your_private_key_here
-Address = 10.8.0.2/32
+PrivateKey = <client_private>
+Address    = 10.8.0.2/32
 
 [Peer]
-PublicKey = server_public_key_here
-Endpoint = your-server.com:51820
+PublicKey  = <server_public>
+Endpoint   = your-server.com:51820
 AllowedIPs = 0.0.0.0/0
 PersistentKeepalive = 25
 
 # Optional: Amnezia obfuscation
-S1 = your_s1_key
-S2 = your_s2_key
+S1 = <key>
+S2 = <key>
 H1 = 1
 H2 = 2
-```
+# or use preset marker line: I3
 
-## Command Line Usage
+Troubleshooting
+- Disk: df -h /opt
+- Entware: opkg --version
+- Install log: cat /tmp/amnezia-ui-install.log
+- Interface: ip link show amnezia0
+- Ping: ping 8.8.8.8
+- Runtime logs: tail -f /tmp/amnezia-ui.log
 
-```bash
-# Start VPN connection
-/jffs/scripts/amnezia-ui start amnezia0
-
-# Stop VPN connection
-/jffs/scripts/amnezia-ui stop amnezia0
-
-# Check connection status
-/jffs/scripts/amnezia-ui status amnezia0
-
-# View logs
-tail -f /tmp/amnezia-ui.log
-```
-
-## Troubleshooting
-
-### Installation Issues
-
-```bash
-# Check available space
-df -h /opt
-
-# Verify Entware is working
-opkg --version
-
-# Check installation log
-cat /tmp/amnezia-ui-install.log
-```
-
-### Connection Problems
-
-```bash
-# Verify interface is up
-ip link show amnezia0
-
-# Test connectivity
-ping 8.8.8.8
-
-# Check system logs
-tail -f /tmp/amnezia-ui.log
-```
-
-## Uninstalling
-
-```bash
-# Stop all connections and remove plugin
+Uninstall
 /jffs/scripts/amnezia-ui stop-all
-sh /jffs/scripts/amnezia-ui uninstall
+/jffs/scripts/amnezia-ui uninstall
 service restart_httpd
-```
 
-## Support
+Notes
+- AmneziaWG 1.5 CPS and presets I1–I5 supported on both Merlin and gnuton.
+- UI/backend shipped by installer; CI publishes tarball artifact.
 
-- **Documentation**: [Wiki Pages](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/wiki)
-- **Issues**: [GitHub Issues](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/discussions)
+License
+MIT — see LICENSE
 
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- [AmneziaVPN Team](https://github.com/amnezia-vpn/amneziawg-go) for the core AmneziaWG implementation
-- ASUSWRT-Merlin community for the excellent firmware foundation
-- Contributors and testers for validating compatibility across different router models
+Acknowledgments
+- AmneziaVPN team (amneziawg-go)
+- ASUSWRT-Merlin community
+- Testers and contributors
