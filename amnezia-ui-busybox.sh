@@ -1,8 +1,6 @@
 #!/bin/sh
-
 # Amnezia UI Universal v3.1.0 - BusyBox Compatible Edition
 # Strict compatibility with minimal shell environments on routers
-
 APP_NAME="Amnezia UI Universal"
 APP_VER="v3.1.0-busybox"
 CONF_DIR="/jffs/amnezia-ui/configs"
@@ -11,7 +9,7 @@ WEB_DIR="/jffs/amnezia-ui/web"
 WEB_PID_FILE="/var/run/amnezia-web.pid"
 
 log() {
-  echo "$(date '+%Y-%m-%d %H:%M:%S'): $*" >> $LOG_FILE
+  printf "%s: %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> $LOG_FILE
 }
 
 usage() {
@@ -91,7 +89,8 @@ web_backend_start() {
   
   log "Starting web backend..."
   cd $WEB_DIR
-  python3 -m http.server 8080 > $WEB_DIR/web.log 2>&1 &
+  printf "" > $WEB_DIR/web.log
+  python3 -m http.server 8080 >> $WEB_DIR/web.log 2>&1 &
   echo $! > $WEB_PID_FILE
   echo "Web backend started on port 8080"
 }
@@ -127,12 +126,22 @@ iface_up() {
   [ -f "$CONF_FILE" ] || { log "Config not found: $CONF_FILE"; return 1; }
   
   log "Starting interface: $NAME"
-  ip link add dev "$NAME" type wireguard 2>> $LOG_FILE
-  amneziawg-go setconf "$NAME" "$CONF_FILE" 2>> $LOG_FILE
-  ip link set up dev "$NAME" 2>> $LOG_FILE
+  if ! ip link add dev "$NAME" type wireguard 2> /dev/null; then
+    printf "Error adding interface %s\n" "$NAME" >> $LOG_FILE
+  fi
+  if ! amneziawg-go setconf "$NAME" "$CONF_FILE" 2> /dev/null; then
+    printf "Error setting config for %s\n" "$NAME" >> $LOG_FILE
+  fi
+  if ! ip link set up dev "$NAME" 2> /dev/null; then
+    printf "Error bringing up interface %s\n" "$NAME" >> $LOG_FILE
+  fi
   
   IP=$(grep '^Address' "$CONF_FILE" | head -n1 | cut -d' ' -f3)
-  [ -n "$IP" ] && ip addr add "$IP" dev "$NAME" 2>> $LOG_FILE
+  if [ -n "$IP" ]; then
+    if ! ip addr add "$IP" dev "$NAME" 2> /dev/null; then
+      printf "Error adding IP %s to %s\n" "$IP" "$NAME" >> $LOG_FILE
+    fi
+  fi
   
   log "Interface $NAME started"
 }
@@ -142,8 +151,12 @@ iface_down() {
   [ -n "$NAME" ] || { log "Interface name required"; return 1; }
   
   log "Stopping interface: $NAME"
-  ip link set down dev "$NAME" 2>> $LOG_FILE
-  ip link delete dev "$NAME" 2>> $LOG_FILE
+  if ! ip link set down dev "$NAME" 2> /dev/null; then
+    printf "Error bringing down interface %s\n" "$NAME" >> $LOG_FILE
+  fi
+  if ! ip link delete dev "$NAME" 2> /dev/null; then
+    printf "Error deleting interface %s\n" "$NAME" >> $LOG_FILE
+  fi
   log "Interface $NAME stopped"
 }
 
