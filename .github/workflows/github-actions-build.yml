@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g., v3.2.3)'
+        description: 'Release version (e.g., v3.2.5)'
         required: true
-        default: 'v3.2.3'
+        default: 'v3.2.5'
       prerelease:
         description: 'Mark as pre-release'
         type: boolean
@@ -30,7 +30,7 @@ jobs:
     
     strategy:
       matrix:
-        arch: [armv7, aarch64]
+        arch: [armv7, aarch64, mips]
         
     steps:
     - name: Checkout repository
@@ -55,6 +55,10 @@ jobs:
         elif [ "${{ matrix.arch }}" = "aarch64" ]; then
           echo "GOOS=linux" >> $GITHUB_ENV
           echo "GOARCH=arm64" >> $GITHUB_ENV
+        elif [ "${{ matrix.arch }}" = "mips" ]; then
+          echo "GOOS=linux" >> $GITHUB_ENV
+          echo "GOARCH=mips" >> $GITHUB_ENV
+          echo "GOMIPS=softfloat" >> $GITHUB_ENV
         fi
         
     - name: Build amneziawg-go
@@ -90,76 +94,88 @@ jobs:
     - name: Download all artifacts
       uses: actions/download-artifact@v4
       
-    - name: Create clean amnezia-ui-package.tar.gz
+    - name: Create architecture-specific packages
       run: |
-        # Create clean package directory structure
-        mkdir -p package/addons/amneziaui
+        # Create architecture-specific packages for ARMv7, AArch64, and MIPS
+        for arch in armv7 aarch64 mips; do
+          echo "Creating package for $arch..."
+          
+          # Create package directory structure
+          mkdir -p package-$arch/addons/amneziaui
+          
+          # Copy main script and make executable
+          cp addons/amneziaui/amnezia-ui package-$arch/addons/amneziaui/
+          chmod +x package-$arch/addons/amneziaui/amnezia-ui
+          
+          # Copy web interface files if they exist
+          if [ -d "addons/amneziaui/web" ]; then
+            cp -r addons/amneziaui/web package-$arch/addons/amneziaui/
+          else
+            mkdir -p package-$arch/addons/amneziaui/web
+          fi
+          
+          # Copy config files if they exist
+          if [ -d "addons/amneziaui/configs" ]; then
+            cp -r addons/amneziaui/configs package-$arch/addons/amneziaui/
+          else
+            mkdir -p package-$arch/addons/amneziaui/configs
+          fi
+          
+          # Add the architecture-specific binary
+          if [ -f "amneziawg-go-$arch/amneziawg-go" ]; then
+            cp amneziawg-go-$arch/amneziawg-go package-$arch/addons/amneziaui/amneziawg-go
+            chmod +x package-$arch/addons/amneziaui/amneziawg-go
+            echo "Using $arch binary"
+          else
+            echo "Warning: $arch binary not found"
+            continue
+          fi
+          
+          # Create version info
+          cat > package-$arch/addons/amneziaui/version.info << EOF
+VERSION=${{ github.event.inputs.version || github.ref_name }}
+BUILD_DATE=$(date -u "+%Y-%m-%d %H:%M:%S UTC")
+BUILD_NUMBER=${{ env.BUILD_DATE }}
+COMMIT_SHA=${{ env.COMMIT_SHA }}
+AMNEZIAWG_VERSION=${{ env.AMNEZIAWG_VERSION }}
+ARCHITECTURE=$arch
+EOF
+          
+          # Create the final architecture-specific package
+          cd package-$arch
+          tar -czf ../amnezia-ui-package-$arch.tar.gz addons/
+          cd ..
+          
+          # Verify package structure
+          echo "Package contents for $arch:"
+          tar -tzf amnezia-ui-package-$arch.tar.gz
+          
+          # Calculate checksum
+          sha256sum amnezia-ui-package-$arch.tar.gz > amnezia-ui-package-$arch.tar.gz.sha256
+        done
         
-        # Copy main script and make executable
-        cp addons/amneziaui/amnezia-ui package/addons/amneziaui/
-        chmod +x package/addons/amneziaui/amnezia-ui
-        
-        # Copy web interface files if they exist
-        if [ -d "addons/amneziaui/web" ]; then
-          cp -r addons/amneziaui/web package/addons/amneziaui/
-        else
-          mkdir -p package/addons/amneziaui/web
-        fi
-        
-        # Copy config files if they exist
-        if [ -d "addons/amneziaui/configs" ]; then
-          cp -r addons/amneziaui/configs package/addons/amneziaui/
-        else
-          mkdir -p package/addons/amneziaui/configs
-        fi
-        
-        # Add the ARM64 binary as default (most common modern architecture)
-        if [ -f "amneziawg-go-aarch64/amneziawg-go" ]; then
-          cp amneziawg-go-aarch64/amneziawg-go package/addons/amneziaui/amneziawg-go
-          chmod +x package/addons/amneziaui/amneziawg-go
-          echo "Using ARM64/AArch64 binary"
-        else
-          echo "Warning: ARM64 binary not found, using ARMv7"
-          cp amneziawg-go-armv7/amneziawg-go package/addons/amneziaui/amneziawg-go
-          chmod +x package/addons/amneziaui/amneziawg-go
-        fi
-        
-        # Create version info
-        cat > package/addons/amneziaui/version.info << EOF
-        VERSION=${{ github.event.inputs.version || github.ref_name }}
-        BUILD_DATE=$(date -u "+%Y-%m-%d %H:%M:%S UTC")
-        BUILD_NUMBER=${{ env.BUILD_DATE }}
-        COMMIT_SHA=${{ env.COMMIT_SHA }}
-        AMNEZIAWG_VERSION=${{ env.AMNEZIAWG_VERSION }}
-        EOF
-        
-        # Create the final package (ONLY this one archive)
-        cd package
-        tar -czf ../amnezia-ui-package.tar.gz addons/
-        cd ..
-        
-        # Verify package structure
-        echo "Final package contents:"
-        tar -tzf amnezia-ui-package.tar.gz
-        
-        # Calculate checksum
-        sha256sum amnezia-ui-package.tar.gz > amnezia-ui-package.tar.gz.sha256
+        # List all created packages
+        echo "All packages created:"
+        ls -la *.tar.gz
         
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         tag_name: ${{ github.event.inputs.version || github.ref_name }}
-        name: Amnezia-UI Universal ${{ github.event.inputs.version || github.ref_name }} - Ultimate DPI Bypass Edition
+        name: Amnezia-UI Multi-Architecture ${{ github.event.inputs.version || github.ref_name }} - Ultimate DPI Bypass Edition
         body: |
-          📦 **Complete Release Package for ASUSWRT-Merlin**
+          📦 **Multi-Architecture Release Package for ASUSWRT-Merlin**
           
-          This release provides the complete `amnezia-ui-package.tar.gz` with proper structure for ASUSWRT-Merlin addons.
+          This release provides separate architecture-specific packages:
+          - `amnezia-ui-package-armv7.tar.gz` - For ARMv7 routers
+          - `amnezia-ui-package-aarch64.tar.gz` - For AArch64/ARM64 routers  
+          - `amnezia-ui-package-mips.tar.gz` - For MIPS routers
           
-          📁 **Package Structure**
+          📁 **Package Structure** (each architecture)
           ```
           addons/
           └── amneziaui/
-              ├── amneziawg-go           # AmneziaWG binary (architecture-specific)
+              ├── amneziawg-go           # Architecture-specific AmneziaWG binary
               ├── web/                   # Web interface files
               ├── configs/               # Configuration files directory
               └── amnezia-ui            # Main control script
@@ -167,26 +183,42 @@ jobs:
           
           🚀 **Installation**
           
-          One-line install (recommended):
+          Automatic installation (detects architecture):
           ```bash
           curl -sSL https://raw.githubusercontent.com/Sp0Xik/asuswrt-merlin-amnezia-ui/main/install.sh | sh
           ```
           
-          Manual install:
+          Manual architecture-specific install:
           ```bash
-          wget https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/amnezia-ui-package.tar.gz
-          tar -xzf amnezia-ui-package.tar.gz
+          # For ARMv7
+          wget https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/amnezia-ui-package-armv7.tar.gz
+          
+          # For AArch64/ARM64
+          wget https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/amnezia-ui-package-aarch64.tar.gz
+          
+          # For MIPS
+          wget https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/amnezia-ui-package-mips.tar.gz
+          
+          # Then extract and install
+          tar -xzf amnezia-ui-package-[YOUR_ARCH].tar.gz
           cp -r addons/amneziaui /jffs/addons/
           chmod +x /jffs/addons/amneziaui/amnezia-ui
           ```
           
           ✨ **What's New in ${{ github.event.inputs.version || github.ref_name }}**
           
-          • 🎯 **Clean package structure**: Single `amnezia-ui-package.tar.gz` with proper layout
-          • 🔧 **Verified components**: All required files included in clean structure
-          • 🛠️ **Install script compatibility**: Updated to work with clean structure
-          • 📝 **Simplified workflow**: No more intermediate binary archives
-          • 🧪 **Installation testing**: Verified install.sh works correctly with clean archive
+          • 🎯 **Multi-architecture support**: Separate packages for ARMv7, AArch64, and MIPS
+          • 🔧 **Auto-detection**: Install script automatically detects router architecture
+          • 🛠️ **Optimized binaries**: Each package contains only the necessary binary for its architecture
+          • 📦 **Clean structure**: Consistent package layout across all architectures
+          • 🧪 **Verified installation**: Tested install.sh works with architecture detection
+          
+          🎯 **Architecture Detection**
+          
+          The install script automatically detects your router's architecture using `uname -m`:
+          - ARMv7: `armv7l`, `arm`
+          - AArch64: `aarch64`, `arm64` 
+          - MIPS: `mips`, `mipsel`
           
           🎯 **Features**
           
@@ -228,19 +260,27 @@ jobs:
           
           ---
           **Build Date**: $(date -u "+%Y-%m-%d")
+          **Architectures**: ARMv7, AArch64/ARM64, MIPS
           **Tested on**: RT-AX88U, RT-AX86U, RT-AC68U, TUF-AX5400
         draft: false
         prerelease: ${{ github.event.inputs.prerelease || false }}
         generate_release_notes: true
         target_commitish: ${{ github.sha }}
         files: |
-          amnezia-ui-package.tar.gz
-          amnezia-ui-package.tar.gz.sha256
+          amnezia-ui-package-armv7.tar.gz
+          amnezia-ui-package-armv7.tar.gz.sha256
+          amnezia-ui-package-aarch64.tar.gz
+          amnezia-ui-package-aarch64.tar.gz.sha256
+          amnezia-ui-package-mips.tar.gz
+          amnezia-ui-package-mips.tar.gz.sha256
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         
     - name: Update latest release info
       run: |
         echo "Release ${{ github.event.inputs.version || github.ref_name }} created successfully" >> $GITHUB_STEP_SUMMARY
-        echo "Main package: [amnezia-ui-package.tar.gz](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/amnezia-ui-package.tar.gz)" >> $GITHUB_STEP_SUMMARY
-        echo "Install command: \`curl -sSL https://raw.githubusercontent.com/Sp0Xik/asuswrt-merlin-amnezia-ui/main/install.sh | sh\`" >> $GITHUB_STEP_SUMMARY
+        echo "Architecture-specific packages:" >> $GITHUB_STEP_SUMMARY
+        echo "- [ARMv7 package](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/amnezia-ui-package-armv7.tar.gz)" >> $GITHUB_STEP_SUMMARY
+        echo "- [AArch64 package](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/amnezia-ui-package-aarch64.tar.gz)" >> $GITHUB_STEP_SUMMARY
+        echo "- [MIPS package](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/amnezia-ui-package-mips.tar.gz)" >> $GITHUB_STEP_SUMMARY
+        echo "Auto-install command: \`curl -sSL https://raw.githubusercontent.com/Sp0Xik/asuswrt-merlin-amnezia-ui/main/install.sh | sh\`" >> $GITHUB_STEP_SUMMARY
