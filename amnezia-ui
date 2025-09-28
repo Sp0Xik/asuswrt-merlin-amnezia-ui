@@ -1,0 +1,13 @@
+#!/bin/sh
+# Amnezia-UI for ASUSWRT-Merlin
+# Simple wrapper following XRAYUI pattern
+
+READONLY_ROUTER_DIR="/jffs/addons/amneziaui"
+export PATH="/opt/sbin:/opt/bin:$PATH"
+
+if [ -f "$READONLY_ROUTER_DIR/amnezia-ui" ]; then
+    exec "$READONLY_ROUTER_DIR/amnezia-ui" "$@"
+else
+    echo "Amnezia-UI not found - run: /jffs/scripts/amnezia-ui install"
+    echo "Or install via: curl -sSL https://raw.githubusercontent.com/Sp0Xik/asuswrt-merlin-amnezia-ui/main/install.sh | sh"
+fi
