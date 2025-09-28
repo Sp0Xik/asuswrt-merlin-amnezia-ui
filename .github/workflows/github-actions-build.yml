@@ -8,7 +8,7 @@ on:
       version:
         description: 'Release version (e.g., v1.0.0)'
         required: true
-        default: 'v1.0.0'
+        default: 'v3.1.0'
       prerelease:
         description: 'Mark as pre-release'
         type: boolean
@@ -99,8 +99,8 @@ jobs:
         
         # Create version info
         cat > release/${{ matrix.arch }}/amnezia-ui/version.info << EOF
-        VERSION=${{ github.ref_name || github.event.inputs.version }}
-        BUILD_DATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+        VERSION=${{ github.event.inputs.version || github.ref_name }}
+        BUILD_DATE=$(date -u "+%Y-%m-%d %H:%M:%S UTC")
         BUILD_NUMBER=${{ env.BUILD_DATE }}
         COMMIT_SHA=${{ env.COMMIT_SHA }}
         ARCHITECTURE=${{ matrix.arch }}
@@ -153,8 +153,8 @@ jobs:
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: ${{ github.ref_name || github.event.inputs.version }}
-        name: Amnezia-UI Universal ${{ github.ref_name || github.event.inputs.version }}
+        tag_name: ${{ github.event.inputs.version || github.ref_name }}
+        name: Amnezia-UI Universal ${{ github.event.inputs.version || github.ref_name }}
         body: |
           ## Amnezia-UI Universal v3.1.0 - Ultimate DPI Bypass Edition
           
@@ -183,7 +183,7 @@ jobs:
           - **MIPS**: Older models with universal compatibility layer
           
           ### 🔧 Build Information
-          - **Build Date**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          - **Build Date**: $(date -u "+%Y-%m-%d %H:%M:%S UTC")
           - **Build Number**: ${{ env.BUILD_DATE }}
           - **Commit**: ${{ env.COMMIT_SHA }}
           - **AmneziawG Version**: ${{ env.AMNEZIAWG_VERSION }}
@@ -203,6 +203,6 @@ jobs:
         
     - name: Update latest release info
       run: |
-        echo "Release ${{ github.ref_name || github.event.inputs.version }} created successfully" >> $GITHUB_STEP_SUMMARY
+        echo "Release ${{ github.event.inputs.version || github.ref_name }} created successfully" >> $GITHUB_STEP_SUMMARY
         echo "Universal installer: [install-universal-v31.sh](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/install-universal-v31.sh)" >> $GITHUB_STEP_SUMMARY
         echo "Universal package: [asuswrt-merlin-amnezia-ui.tar.gz](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/asuswrt-merlin-amnezia-ui.tar.gz)" >> $GITHUB_STEP_SUMMARY
