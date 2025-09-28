@@ -8,6 +8,24 @@
 
 Provides command-line and web interface management for AmneziaWG tunnels with advanced DPI circumvention technologies including CPS control and obfuscation presets (I1-I5, S1-S4, H1-H4).
 
+## 🚀 One-Command Installation
+
+**Finally! True one-command installation** - no more manual `.asusrouter` marker creation or compatibility issues!
+
+```bash
+curl -sSL https://raw.githubusercontent.com/Sp0Xik/asuswrt-merlin-amnezia-ui/main/install.sh | sh
+```
+
+### ✨ What Makes This Special
+
+- **🎯 Auto-Detection**: Automatically detects Merlin firmware
+- **🔧 Smart Setup**: Creates compatibility markers automatically
+- **📝 Clear Feedback**: User-friendly installation logging
+- **🚀 Zero Manual Steps**: No more `touch /jffs/.asusrouter` commands
+- **✅ Just Works**: Eliminates "ASUSWRT-Merlin firmware required" errors
+
+Follows the proven UX pattern used by **YazFi**, **Diversion**, and **XRAYUI** for seamless installation.
+
 ## Installation
 
 ```sh
@@ -57,6 +75,7 @@ asuswrt-merlin-amnezia-ui/
 ## Custom Scripts Support
 
 Use `/jffs/amneziaui_custom/` directory for custom hooks:
+
 - `firewall-start` - Run after firewall rules applied
 - `pre-start` - Run before interface start
 - `post-start` - Run after interface start
@@ -77,6 +96,7 @@ Use `/jffs/amneziaui_custom/` directory for custom hooks:
 - ASUSWRT-Merlin 3004.388.x+
 - Custom scripts enabled
 - 10MB free space in /jffs
+- **No manual compatibility setup needed!** 🎉
 
 ## Compatibility
 
@@ -106,3 +126,4 @@ Use `/jffs/amneziaui_custom/` directory for custom hooks:
 - Compatible with existing VPN and firewall addons
 - Custom script hooks for advanced users
 - Automatic startup and shutdown handling
+- **Smart compatibility detection and setup** 🚀
