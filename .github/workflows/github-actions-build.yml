@@ -1,0 +1,208 @@
+name: Build and Release Amnezia-UI Universal
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+      prerelease:
+        description: 'Mark as pre-release'
+        type: boolean
+        default: false
+
+env:
+  AMNEZIAWG_VERSION: "v0.2.15"
+  BUILD_DATE: ${{ github.run_number }}
+  COMMIT_SHA: ${{ github.sha }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        arch: [armv7, aarch64]
+        
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+        
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential git wget tar gzip
+        
+    - name: Set up cross-compilation
+      run: |
+        if [ "${{ matrix.arch }}" = "armv7" ]; then
+          echo "GOOS=linux" >> $GITHUB_ENV
+          echo "GOARCH=arm" >> $GITHUB_ENV
+          echo "GOARM=7" >> $GITHUB_ENV
+        elif [ "${{ matrix.arch }}" = "aarch64" ]; then
+          echo "GOOS=linux" >> $GITHUB_ENV
+          echo "GOARCH=arm64" >> $GITHUB_ENV
+        fi
+        
+    - name: Build amneziawg-go
+      run: |
+        # Clone amneziawg-go repository
+        git clone --branch ${{ env.AMNEZIAWG_VERSION }} https://github.com/amnezia-vpn/amneziawg-go.git
+        cd amneziawg-go
+        
+        # Build for target architecture
+        export CGO_ENABLED=0
+        go build -v -o amneziawg-go -ldflags "-s -w -X main.Version=${{ env.AMNEZIAWG_VERSION }}"
+        
+        # Copy binary to build directory
+        mkdir -p ../build/${{ matrix.arch }}
+        cp amneziawg-go ../build/${{ matrix.arch }}/
+        
+    - name: Prepare release package
+      run: |
+        mkdir -p release/${{ matrix.arch }}/amnezia-ui
+        
+        # Copy main script
+        cp amnezia-ui-universal.sh release/${{ matrix.arch }}/amnezia-ui/amnezia-ui
+        chmod +x release/${{ matrix.arch }}/amnezia-ui/amnezia-ui
+        
+        # Copy ASP file
+        cp amnezia-ui.asp release/${{ matrix.arch }}/amnezia-ui/
+        
+        # Copy configs directory if exists
+        if [ -d "configs" ]; then
+          cp -r configs release/${{ matrix.arch }}/amnezia-ui/
+        fi
+        
+        # Copy binary
+        cp build/${{ matrix.arch }}/amneziawg-go release/${{ matrix.arch }}/amnezia-ui/
+        
+        # Copy install script
+        cp install-universal.sh release/${{ matrix.arch }}/
+        chmod +x release/${{ matrix.arch }}/install-universal.sh
+        
+        # Copy README
+        cp README-universal.md release/${{ matrix.arch }}/README.md
+        
+        # Copy LICENSE
+        cp LICENSE release/${{ matrix.arch }}/
+        
+        # Create version info
+        cat > release/${{ matrix.arch }}/amnezia-ui/version.info << EOF
+        VERSION=${{ github.ref_name || github.event.inputs.version }}
+        BUILD_DATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+        BUILD_NUMBER=${{ env.BUILD_DATE }}
+        COMMIT_SHA=${{ env.COMMIT_SHA }}
+        ARCHITECTURE=${{ matrix.arch }}
+        AMNEZIAWG_VERSION=${{ env.AMNEZIAWG_VERSION }}
+        EOF
+        
+    - name: Create tarball
+      run: |
+        cd release/${{ matrix.arch }}
+        tar -czf ../../asuswrt-merlin-amnezia-ui-${{ matrix.arch }}.tar.gz *
+        
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: asuswrt-merlin-amnezia-ui-${{ matrix.arch }}
+        path: asuswrt-merlin-amnezia-ui-${{ matrix.arch }}.tar.gz
+        retention-days: 30
+        
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+      
+    - name: Prepare release files
+      run: |
+        # Create universal installer
+        mkdir -p universal
+        cp install-universal.sh universal/
+        cp README-universal.md universal/README.md
+        cp LICENSE universal/
+        
+        # Copy architecture-specific files
+        cp asuswrt-merlin-amnezia-ui-armv7/*.tar.gz ./
+        cp asuswrt-merlin-amnezia-ui-aarch64/*.tar.gz ./
+        
+        # Create universal package with both architectures
+        tar -czf asuswrt-merlin-amnezia-ui-universal.tar.gz universal/ *.tar.gz
+        
+    - name: Calculate checksums
+      run: |
+        sha256sum *.tar.gz > checksums.txt
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.ref_name || github.event.inputs.version }}
+        name: Amnezia-UI Universal ${{ github.ref_name || github.event.inputs.version }}
+        body: |
+          ## Amnezia-UI Universal Production Release
+          
+          ### Features
+          - ✅ Universal installer supporting 30+ router models
+          - 🔍 Automatic architecture detection (ARMv7/AArch64)
+          - 🛡️ GitHub Actions powered automated builds
+          - 🔄 Intelligent fallback mechanisms
+          - 📊 Enhanced compatibility matrix
+          - 🚀 Production-ready deployment system
+          
+          ### Supported Architectures
+          - **ARMv7**: RT-AX88U, RT-AX86U, TUF-AX5400, RT-AX58U, etc.
+          - **AArch64**: RT-AX86U Pro, GT-AX6000, RT-AX89X, etc.
+          
+          ### Installation
+          ```bash
+          # Quick install (recommended)
+          wget -O- https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/install-universal.sh | sh
+          
+          # Manual install
+          wget https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/asuswrt-merlin-amnezia-ui-universal.tar.gz
+          tar -xzf asuswrt-merlin-amnezia-ui-universal.tar.gz
+          sh install-universal.sh
+          ```
+          
+          ### Build Information
+          - **Build Date**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          - **Build Number**: ${{ env.BUILD_DATE }}
+          - **Commit**: ${{ env.COMMIT_SHA }}
+          - **AmneziawG Version**: ${{ env.AMNEZIAWG_VERSION }}
+          
+          ### Verification
+          All packages include SHA256 checksums for integrity verification.
+          
+          For support and documentation, see the [README](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui#readme).
+        draft: false
+        prerelease: ${{ github.event.inputs.prerelease || false }}
+        files: |
+          asuswrt-merlin-amnezia-ui-armv7.tar.gz
+          asuswrt-merlin-amnezia-ui-aarch64.tar.gz
+          asuswrt-merlin-amnezia-ui-universal.tar.gz
+          install-universal.sh
+          checksums.txt
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Update latest release info
+      run: |
+        echo "Release ${{ github.ref_name || github.event.inputs.version }} created successfully" >> $GITHUB_STEP_SUMMARY
+        echo "Universal installer: [install-universal.sh](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/install-universal.sh)" >> $GITHUB_STEP_SUMMARY
+        echo "Universal package: [asuswrt-merlin-amnezia-ui-universal.tar.gz](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/asuswrt-merlin-amnezia-ui-universal.tar.gz)" >> $GITHUB_STEP_SUMMARY
