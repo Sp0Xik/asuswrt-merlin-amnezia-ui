@@ -1,5 +1,4 @@
 name: Build and Release Amnezia-UI Universal
-
 on:
   push:
     tags:
@@ -72,11 +71,13 @@ jobs:
         mkdir -p release/${{ matrix.arch }}/amnezia-ui
         
         # Copy main script
-        cp amnezia-ui-universal.sh release/${{ matrix.arch }}/amnezia-ui/amnezia-ui
+        cp amnezia-ui-universal-v31.sh release/${{ matrix.arch }}/amnezia-ui/amnezia-ui
         chmod +x release/${{ matrix.arch }}/amnezia-ui/amnezia-ui
         
         # Copy ASP file
-        cp amnezia-ui.asp release/${{ matrix.arch }}/amnezia-ui/
+        if [ -f "amnezia-ui.asp" ]; then
+          cp amnezia-ui.asp release/${{ matrix.arch }}/amnezia-ui/
+        fi
         
         # Copy configs directory if exists
         if [ -d "configs" ]; then
@@ -87,11 +88,11 @@ jobs:
         cp build/${{ matrix.arch }}/amneziawg-go release/${{ matrix.arch }}/amnezia-ui/
         
         # Copy install script
-        cp install-universal.sh release/${{ matrix.arch }}/
+        cp install-universal-v31.sh release/${{ matrix.arch }}/install-universal.sh
         chmod +x release/${{ matrix.arch }}/install-universal.sh
         
         # Copy README
-        cp README-universal.md release/${{ matrix.arch }}/README.md
+        cp README.md release/${{ matrix.arch }}/
         
         # Copy LICENSE
         cp LICENSE release/${{ matrix.arch }}/
@@ -112,7 +113,7 @@ jobs:
         tar -czf ../../asuswrt-merlin-amnezia-ui-${{ matrix.arch }}.tar.gz *
         
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: asuswrt-merlin-amnezia-ui-${{ matrix.arch }}
         path: asuswrt-merlin-amnezia-ui-${{ matrix.arch }}.tar.gz
@@ -128,14 +129,14 @@ jobs:
       uses: actions/checkout@v4
       
     - name: Download all artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       
     - name: Prepare release files
       run: |
         # Create universal installer
         mkdir -p universal
-        cp install-universal.sh universal/
-        cp README-universal.md universal/README.md
+        cp install-universal-v31.sh universal/install-universal.sh
+        cp README.md universal/
         cp LICENSE universal/
         
         # Copy architecture-specific files
@@ -143,7 +144,7 @@ jobs:
         cp asuswrt-merlin-amnezia-ui-aarch64/*.tar.gz ./
         
         # Create universal package with both architectures
-        tar -czf asuswrt-merlin-amnezia-ui-universal.tar.gz universal/ *.tar.gz
+        tar -czf asuswrt-merlin-amnezia-ui.tar.gz universal/ *.tar.gz
         
     - name: Calculate checksums
       run: |
@@ -155,48 +156,47 @@ jobs:
         tag_name: ${{ github.ref_name || github.event.inputs.version }}
         name: Amnezia-UI Universal ${{ github.ref_name || github.event.inputs.version }}
         body: |
-          ## Amnezia-UI Universal Production Release
+          ## Amnezia-UI Universal v3.1.0 - Ultimate DPI Bypass Edition
           
-          ### Features
-          - ✅ Universal installer supporting 30+ router models
-          - 🔍 Automatic architecture detection (ARMv7/AArch64)
-          - 🛡️ GitHub Actions powered automated builds
-          - 🔄 Intelligent fallback mechanisms
-          - 📊 Enhanced compatibility matrix
-          - 🚀 Production-ready deployment system
+          ### ✨ New in v3.1.0
+          - 🔥 **Complete AmneziaWG 1.5 support** with DPI-bypass technologies
+          - 🛡️ **CPS on/off control** for enhanced censorship circumvention
+          - 🎯 **Advanced presets I1-I5** with S1-S4 and H1-H4 header obfuscation
+          - 🌐 **Universal installer** supporting 30+ ASUSWRT-Merlin router models
+          - ⚡ **Auto-detection system** for ARMv7/AArch64/MIPS architectures
+          - 🔄 **Intelligent fallback** mechanisms for maximum compatibility
           
-          ### Supported Architectures
-          - **ARMv7**: RT-AX88U, RT-AX86U, TUF-AX5400, RT-AX58U, etc.
-          - **AArch64**: RT-AX86U Pro, GT-AX6000, RT-AX89X, etc.
-          
-          ### Installation
+          ### 🚀 Quick Installation
           ```bash
-          # Quick install (recommended)
-          wget -O- https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/install-universal.sh | sh
+          # One-line install (recommended)
+          curl -sSL https://raw.githubusercontent.com/Sp0Xik/asuswrt-merlin-amnezia-ui/main/install-universal-v31.sh | sh
           
           # Manual install
-          wget https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/asuswrt-merlin-amnezia-ui-universal.tar.gz
-          tar -xzf asuswrt-merlin-amnezia-ui-universal.tar.gz
+          wget https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/asuswrt-merlin-amnezia-ui.tar.gz
+          tar -xzf asuswrt-merlin-amnezia-ui.tar.gz
           sh install-universal.sh
           ```
           
-          ### Build Information
+          ### 📋 Supported Platforms
+          - **ARMv7**: RT-AC68U, TUF-AX5400, RT-AX58U and others
+          - **ARMv8/AArch64**: RT-AX88U, RT-AX86U, RT-AC86U Pro and others
+          - **MIPS**: Older models with universal compatibility layer
+          
+          ### 🔧 Build Information
           - **Build Date**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
           - **Build Number**: ${{ env.BUILD_DATE }}
           - **Commit**: ${{ env.COMMIT_SHA }}
           - **AmneziawG Version**: ${{ env.AMNEZIAWG_VERSION }}
           
-          ### Verification
-          All packages include SHA256 checksums for integrity verification.
-          
-          For support and documentation, see the [README](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui#readme).
+          ### 📚 Documentation
+          For detailed installation guides, configuration examples, and troubleshooting, see the [README](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui#readme).
         draft: false
         prerelease: ${{ github.event.inputs.prerelease || false }}
         files: |
           asuswrt-merlin-amnezia-ui-armv7.tar.gz
           asuswrt-merlin-amnezia-ui-aarch64.tar.gz
-          asuswrt-merlin-amnezia-ui-universal.tar.gz
-          install-universal.sh
+          asuswrt-merlin-amnezia-ui.tar.gz
+          install-universal-v31.sh
           checksums.txt
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -204,5 +204,5 @@ jobs:
     - name: Update latest release info
       run: |
         echo "Release ${{ github.ref_name || github.event.inputs.version }} created successfully" >> $GITHUB_STEP_SUMMARY
-        echo "Universal installer: [install-universal.sh](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/install-universal.sh)" >> $GITHUB_STEP_SUMMARY
-        echo "Universal package: [asuswrt-merlin-amnezia-ui-universal.tar.gz](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/asuswrt-merlin-amnezia-ui-universal.tar.gz)" >> $GITHUB_STEP_SUMMARY
+        echo "Universal installer: [install-universal-v31.sh](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/install-universal-v31.sh)" >> $GITHUB_STEP_SUMMARY
+        echo "Universal package: [asuswrt-merlin-amnezia-ui.tar.gz](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases/latest/download/asuswrt-merlin-amnezia-ui.tar.gz)" >> $GITHUB_STEP_SUMMARY
