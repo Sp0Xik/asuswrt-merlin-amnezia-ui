@@ -1,9 +1,7 @@
 #!/bin/sh
-
 # Amnezia-UI for ASUSWRT-Merlin
 # AmneziaWG (WireGuard with DPI bypass) addon
 # Provides command-line and web interface management
-
 VERSION="3.2.0"
 BASE_DIR="/jffs/addons/amneziaui"
 CONFIG_DIR="$BASE_DIR/configs"
@@ -38,8 +36,16 @@ print_status() {
 
 # Check if running on ASUSWRT-Merlin
 check_merlin() {
+    # Check for standard Merlin marker file (like YazFi/Diversion/XRAYUI)
+    if [ -f /jffs/.asusrouter ]; then
+        return 0
+    fi
+    
+    # Fallback: check for older Merlin detection method
     if [ ! -f /jffs/.asusrouter ]; then
         print_status "error" "This addon requires ASUSWRT-Merlin firmware"
+        print_status "info" "If you are running Merlin firmware, you can create the marker file manually:"
+        print_status "info" "Execute: touch /jffs/.asusrouter"
         exit 1
     fi
 }
@@ -198,15 +204,19 @@ start_web() {
     <div class="container">
         <h1>Amnezia-UI Web Interface v3.2.0</h1>
         <div class="info status">Web interface is running on port 8080</div>
+        
         <h2>Quick Actions</h2>
         <button onclick="alert('Feature coming soon')">Start VPN</button>
         <button onclick="alert('Feature coming soon')">Stop VPN</button>
         <button onclick="alert('Feature coming soon')">View Status</button>
+        
         <h2>Configuration</h2>
         <p>Use the command line interface for full configuration management:</p>
-        <code>amnezia-ui add /path/to/config.conf</code><br>
-        <code>amnezia-ui start amnezia0</code><br>
-        <code>amnezia-ui status</code>
+        <pre>
+amnezia-ui add /path/to/config.conf
+amnezia-ui start amnezia0
+amnezia-ui status
+        </pre>
     </div>
 </body>
 </html>
@@ -300,7 +310,6 @@ Custom Scripts:
   - firewall-start: Run after firewall rules applied
   - pre-start: Run before interface start
   - post-start: Run after interface start
-
 EOF
 }
 
