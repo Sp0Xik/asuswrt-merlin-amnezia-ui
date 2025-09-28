@@ -14,6 +14,11 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: write
+  packages: write
+  actions: read
+  
 env:
   AMNEZIAWG_VERSION: "v0.2.15"
   BUILD_DATE: ${{ github.run_number }}
@@ -154,7 +159,7 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         tag_name: ${{ github.event.inputs.version || github.ref_name }}
-        name: Amnezia-UI Universal ${{ github.event.inputs.version || github.ref_name }}
+        name: Amnezia-UI Universal ${{ github.event.inputs.version || github.ref_name }} - Ultimate DPI Bypass Edition
         body: |
           ## Amnezia-UI Universal v3.1.0 - Ultimate DPI Bypass Edition
           
@@ -187,6 +192,12 @@ jobs:
           - **Build Number**: ${{ env.BUILD_DATE }}
           - **Commit**: ${{ env.COMMIT_SHA }}
           - **AmneziawG Version**: ${{ env.AMNEZIAWG_VERSION }}
+          
+          ### 🎯 What's Included
+          - Universal installer script (install-universal-v31.sh)
+          - Architecture-specific binaries (ARMv7 and AArch64)
+          - Complete package with all dependencies
+          - Configuration examples and documentation
           
           ### 📚 Documentation
           For detailed installation guides, configuration examples, and troubleshooting, see the [README](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui#readme).
