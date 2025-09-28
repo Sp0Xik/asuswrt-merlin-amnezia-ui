@@ -1,180 +1,63 @@
-# 🚀 Amnezia-UI v3.1.0 — Универсальный плагин для ASUSWRT-Merlin
+# Amnezia-UI for ASUSWRT-Merlin
 
-[![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Platform](https://img.shields.io/badge/Platform-ASUSWRT--Merlin-blue.svg)](#совместимость) [![Version](https://img.shields.io/badge/Version-v3.1.0-orange.svg)](#releases) [![Build](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/actions/workflows/github-actions-build.yml/badge.svg)](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/actions)
+[![Platform](https://img.shields.io/badge/platform-ASUSWRT--Merlin-blue.svg)](https://www.asuswrt-merlin.net)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![GitHub release](https://img.shields.io/github/release/Sp0Xik/asuswrt-merlin-amnezia-ui.svg)](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases)
 
-> **🔥 Полная интеграция AmneziaWG с DPI-обходом прямо в веб-интерфейс роутера!**
+**AmneziaWG (WireGuard with DPI bypass) addon for ASUSWRT-Merlin routers**
 
-**Amnezia-UI** — это продвинутый плагин, который интегрирует [AmneziaWG](https://github.com/amnezia-vpn/amneziawg-go) (WireGuard с технологиями обхода DPI) прямо в веб-интерфейс роутера ASUSWRT-Merlin. Поддерживает как оригинальный Merlin, так и форк от gnuton.
+Provides command-line and web interface management for AmneziaWG tunnels with advanced DPI circumvention technologies including CPS control and obfuscation presets (I1-I5, S1-S4, H1-H4).
 
-## ✨ Ключевые возможности
+## Installation
 
-| Функция | Описание | Статус |
-|---------|-----------|--------|
-| 🌐 **Web UI интеграция** | Кнопка в таблице VPN Client для управления конфигами | ✅ |
-| 🔧 **AmneziaWG 1.5** | Поддержка CPS вкл/выкл, пресеты I1–I5, S1–S4, H1–H4 | ✅ |
-| 🎯 **Селективная маршрутизация** | Маршрутизация по доменам/IP с использованием ipset | ✅ |
-| 🖥️ **Универсальная архитектура** | ARMv7, ARMv8, MIPS — все в одном пакете | ✅ |
-| ⚡ **Быстрая установка** | Установка в одну строку + CLI инструменты | ✅ |
-
-## 📋 Совместимость
-
-### Поддерживаемые прошивки:
-- **ASUSWRT-Merlin**: 3004.388.x и выше
-- **gnuton форк**: Все актуальные версии
-
-### Протестированные модели:
-
-| Модель | Архитектура | Статус |
-|--------|-------------|--------|
-| RT-AX88U | ARMv8 | ✅ Протестировано |
-| RT-AX86U | ARMv8 | ✅ Протестировано |
-| TUF-AX5400 | ARMv7 | ✅ Протестировано |
-| RT-AC68U | ARMv7 | ✅ Протестировано |
-| RT-AX58U | ARMv7 | ✅ Совместимо |
-| RT-AC86U | ARMv8 | ✅ Совместимо |
-
-### Совместимость с другими плагинами:
-- ✅ VPN Director
-- ✅ YazFi  
-- ✅ Diversion
-- ✅ Skynet
-
-## 🛠️ Системные требования
-
-| Компонент | Требование |
-|-----------|------------|
-| **Прошивка** | ASUSWRT-Merlin 3004.388.x+ |
-| **Entware** | Установлен и настроен (opkg) |
-| **Свободное место** | ~50 МБ в /opt во время установки |
-| **Интернет** | Доступ для скачивания компонентов |
-
-## 🚀 Быстрая установка
-
-### Метод 1: Merlin Install Pattern (NEW! 🔥)
-
-**Современный паттерн установки в стиле YazFi/XRAYUI для ASUSWRT-Merlin:**
-
-```bash
-curl -sSL https://raw.githubusercontent.com/Sp0Xik/asuswrt-merlin-amnezia-ui/main/install-universal-v31-merlin.sh | sh
+```sh
+curl -sSL https://raw.githubusercontent.com/Sp0Xik/asuswrt-merlin-amnezia-ui/main/install.sh | sh
 ```
 
-**Что делает этот скрипт:**
-- ✅ Скачивает пакет в `/tmp`
-- ✅ Извлекает архив в `/jffs/addons/amneziaui`
-- ✅ Перемещает скрипты в `/jffs/scripts`
-- ✅ Устанавливает права `chmod 0755`
-- ✅ Автоматически запускает `sh /jffs/scripts/amnezia-ui install`
-- ✅ Чистый вывод в stdout без лишнего логирования
-- ✅ Полная совместимость с Merlin и gnuton форком
+## Quick Start
 
-### Метод 2: Универсальная установка (классический)
+```sh
+# Add configuration
+amnezia-ui add /path/to/config.conf
 
-```bash
-curl -sSL https://raw.githubusercontent.com/Sp0Xik/asuswrt-merlin-amnezia-ui/main/install-universal-v31.sh | sh
-```
-
-### После установки:
-
-1. **Управление через CLI:**
-   ```bash
-   amnezia-ui help
-   amnezia-ui add /path/to/config.conf
-   amnezia-ui start
-   amnezia-ui status
-   ```
-
-2. **Веб-интерфейс:**
-   ```bash
-   amnezia-ui web start
-   ```
-   Затем перейдите: `http://[IP_роутера]:8080`
-
-3. **Интеграция в Merlin UI:**
-   - Откройте `VPN → VPN Client`
-   - Найдите кнопку "Amnezia-UI" в таблице
-
-## 📱 Скриншоты
-
-### Веб-интерфейс
-![Web Interface](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/assets/placeholder-web.png)
-
-### Интеграция в Merlin
-![Merlin Integration](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/assets/placeholder-merlin.png)
-
-## 🔧 Использование
-
-### Добавление конфигураций
-
-```bash
-# Добавить конфигурацию
-amnezia-ui add /path/to/your/config.conf
-
-# Запустить интерфейс
+# Start VPN interface  
 amnezia-ui start amnezia0
 
-# Проверить статус
-amnezia-ui status
-```
-
-### Веб-управление
-
-```bash
-# Запустить веб-сервер
+# Start web interface
 amnezia-ui web start
+# Access at http://router-ip:8080
 
-# Остановить веб-сервер  
-amnezia-ui web stop
-
-# Проверить статус веб-сервера
-amnezia-ui web status
-```
-
-## 🐛 Устранение неполадок
-
-### Проверка статуса
-```bash
+# Check status
 amnezia-ui status
-ip link show | grep amnezia
 ```
 
-### Просмотр логов
-```bash
-amnezia-ui log
-tail -f /jffs/amnezia-ui/amnezia.log
-```
+## Custom Scripts Support
 
-### Переустановка
-```bash
-amnezia-ui uninstall
-curl -sSL https://raw.githubusercontent.com/Sp0Xik/asuswrt-merlin-amnezia-ui/main/install-universal-v31-merlin.sh | sh
-```
+Use `/jffs/amneziaui_custom/` directory for custom hooks:
 
-## 📋 Известные проблемы
+- `firewall-start` - Run after firewall rules applied
+- `pre-start` - Run before interface start
+- `post-start` - Run after interface start
 
-- **Проблема**: Интерфейс не поднимается
-  - **Решение**: Проверьте права доступа: `ls -la /jffs/amnezia-ui/`
-  
-- **Проблема**: Веб-интерфейс недоступен
-  - **Решение**: Убедитесь что порт 8080 не занят: `netstat -ln | grep :8080`
+## Commands
 
-## 🤝 Участие в разработке
+- `install` - Install/reinstall addon
+- `uninstall` - Remove addon
+- `start [interface]` - Start interface
+- `stop [interface]` - Stop interface
+- `restart [interface]` - Restart interface
+- `status` - Show status
+- `add <config>` - Add config file
+- `web start|stop|status` - Manage web interface
 
-1. Сделайте Fork репозитория
-2. Создайте ветку для новой функции (`git checkout -b feature/AmazingFeature`)
-3. Сделайте Commit изменений (`git commit -m 'Add some AmazingFeature'`)
-4. Сделайте Push в ветку (`git push origin feature/AmazingFeature`)
-5. Откройте Pull Request
+## Requirements
 
-## 📄 Лицензия
+- ASUSWRT-Merlin 3004.388.x+
+- Custom scripts enabled
+- 10MB free space in `/jffs`
 
-Распространяется под лицензией MIT. См. `LICENSE` для дополнительной информации.
+## Compatibility
 
-## 🙏 Благодарности
-
-- [AmneziaVPN](https://github.com/amnezia-vpn) за потрясающий AmneziaWG
-- Сообществу ASUSWRT-Merlin за фидбэк и тестирование
-- Разработчикам YazFi и XRAYUI за вдохновение паттерна установки
-
----
-
-⭐ **Поставьте звездочку, если проект оказался полезным!**
+- **Architecture**: ARMv7, ARMv8/AArch64, MIPS
+- **Firmware**: Original Merlin, gnuton fork
+- **Addons**: VPN Director, YazFi, Diversion, Skynet
