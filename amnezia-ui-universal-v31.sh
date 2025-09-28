@@ -27,7 +27,6 @@ Commands:
   log            Show logs
   version        Show version
   help           Show this help
-
 EOF
 }
 
