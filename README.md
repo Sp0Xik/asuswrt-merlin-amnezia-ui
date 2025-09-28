@@ -35,7 +35,7 @@ ASP status page: http://router-ip:8080/asp
 
 ---
 ## 🧩 Persistent VPN Menu Integration (XRAYUI-style)
-We now implement a real, automatic, persistent integration into the router's stock web UI, just like XRAYUI/YazFi/Diversion.
+We implement a real, automatic, persistent integration into the router's stock web UI, just like XRAYUI/YazFi/Diversion.
 Two methods are used automatically by install scripts and hooks:
 1. Overlay injection (preferred, persistent across reboots/updates)
    - We create /jffs/overlay/www/Advanced_VPN_Content.asp on first boot after update
@@ -60,12 +60,10 @@ Verification:
 - Click it — lands on /amneziaui/asp/index.asp with status badge and Web UI button
 - Status auto-refreshes every 10 seconds
 
----
 ## 🧭 Mini-UI (userX.asp) — Universal Integration on Any Merlin Router
 Starting v3.5.0 we auto-create an independent mini-page that appears as a separate submenu entry on all Merlin routers, even if the stock ASP structure is missing or customized by skins.
-
 - File: /www/user_amneziaui.asp (created in overlay at /jffs/overlay/www when available)
-- Contains a minimal embedded iframe that opens the Amnezia-UI web interface at http://router-ip:8080
+- Contains a minimal embedded iframe that opens the Amnezia-UI web interface at http://router-ip:8080/
 - Also provides a direct "Open full UI" button in a new tab
 - A link to this page is injected into:
   - The router homepage (index.asp via overlay copy)
@@ -80,17 +78,26 @@ amnezia-ui install
 amnezia-ui ui overlay
 ```
 
----
-## ✨ What’s New in v3.5.0
-- Universal Mini-UI: auto-create /www/user_amneziaui.asp with embedded iframe and external link
-- Automatic homepage and VPN/Firewall link injection via overlay (fallback-safe)
-- Improved installer/uninstaller flow for UI integration
+## 🧨 New in v3.5.1 — Top-level VPN tab entry (VPN.asp)
+- New overlay injection for /www/VPN.asp to add “Amnezia-UI” directly into the VPN subtab list (next to OpenVPN/WireGuard), not buried inside any inner page.
+- Keeps previous Advanced_VPN_Content.asp / Advanced_Firewall_Content.asp injections as fallback if a skin doesn’t expose standard VPN.asp markup.
+- Safe overlay-first approach: we copy stock files to /jffs/overlay/www and only modify overlays; falls back to sed-injection when overlays aren’t available.
+- One-command maintenance: existing `amnezia-ui ui overlay|patch` now also handles VPN.asp menu entry.
 
-Previous: v3.4.1
-- Real router ASP integration: auto-generated ASP page at /amneziaui/asp/index.asp
-- Automatic VPN menu button injection (overlay + sed fallback)
-- Hooks created on install (services-start, init-start)
-- Web UI auto-start and persistence improvements
+How it works (summary):
+- On install/boot, the script:
+  - Creates /jffs/overlay/www/user_amneziaui.asp
+  - Ensures links on homepage, VPN, and Firewall pages
+  - Copies /www/VPN.asp to overlay (if present) and injects an `<li><a href="/user_amneziaui.asp">Amnezia-UI</a></li>` into the subtab `<ul>`
+
+## ✨ Changelog
+- v3.5.1
+  - Top-level VPN tab entry injection via VPN.asp overlay (preferred) with graceful fallback
+  - VERSION bump to 3.5.1; installer updated to reference VPN.asp variable
+- v3.5.0
+  - Universal Mini-UI: auto-create /www/user_amneziaui.asp with embedded iframe and external link
+  - Automatic homepage and VPN/Firewall link injection via overlay (fallback-safe)
+  - Improved installer/uninstaller flow for UI integration
 
 ## Requirements
 - ASUSWRT-Merlin 3004.388.x+
