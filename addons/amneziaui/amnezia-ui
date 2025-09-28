@@ -36,19 +36,27 @@ print_status() {
     log "$1: $2"
 }
 
-# Check if running on ASUSWRT-Merlin
+# Check if running on ASUSWRT-Merlin - FIXED VERSION
 check_merlin() {
-    # Accept either the presence of .asusrouter or explicit 'merlin' in uname
+    # First check if .asusrouter marker exists (created by installer)
     if [ -f /jffs/.asusrouter ]; then
+        print_status "success" "ASUSWRT-Merlin compatibility confirmed (marker found)"
         return 0
     fi
+    
+    # Secondary check: detect Merlin in uname and auto-create marker
     if uname -a 2>/dev/null | grep -iq merlin; then
-        # Create marker to align with YazFi/XRAYUI behavior
-        touch /jffs/.asusrouter 2>/dev/null && return 0
+        print_status "info" "Merlin detected in system info, creating compatibility marker"
+        touch /jffs/.asusrouter 2>/dev/null && {
+            print_status "success" "Compatibility marker created successfully"
+            return 0
+        }
     fi
-    print_status "error" "This addon requires ASUSWRT-Merlin firmware"
-    print_status "info" "If you run Merlin, create marker: touch /jffs/.asusrouter"
-    exit 1
+    
+    # If neither works, show warning but don't exit (graceful fallback)
+    print_status "warning" "ASUSWRT-Merlin firmware not detected"
+    print_status "info" "Continuing anyway - if you experience issues, manually create: touch /jffs/.asusrouter"
+    return 0  # Changed from exit 1 to return 0 for graceful handling
 }
 
 # Create directory structure
@@ -67,21 +75,11 @@ generate_asp() {
     local lan_ip
     lan_ip=$(nvram get lan_ipaddr 2>/dev/null || echo "router-ip")
     cat > "$ASP_INDEX" << 'EOF_ASP'
-<% nvram("lan_ipaddr"); %>
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Amnezia-UI</title>
-<style>
-body{font-family:Arial,sans-serif;margin:16px}
+<% nvram("lan_ipaddr"); %><!DOCTYPE html>
+<meta charset="utf-8"/><meta content="width=device-width, initial-scale=1" name="viewport"/>Amnezia-UIbody{font-family:Arial,sans-serif;margin:16px}
 .container{max-width:900px;margin:0 auto}
 .card{border:1px solid #ddd;padding:16px;border-radius:8px;margin:10px 0}
-.badge{display:inline-block;padding:4px 8px;border-radius:12px;background:#eef}
-</style>
-<script>
-function fetchStatus(){
+.badge{display:inline-block;padding:4px 8px;border-radius:12px;background:#eef}function fetchStatus(){
   fetch('/status.json').then(r=>r.json()).then(js=>{
     document.getElementById('iface').textContent=js.interface;
     document.getElementById('state').textContent=js.state;
@@ -89,26 +87,17 @@ function fetchStatus(){
   }).catch(_=>{});
 }
 setInterval(fetchStatus, 3000);
-window.onload=fetchStatus;
-</script>
-</head>
-<body>
-<div class="container">
-  <h2>Amnezia-UI</h2>
+window.onload=fetchStatus;<div class="container">  Amnezia-UI
   <div class="card">
-    <div>Interface: <span id="iface" class="badge">amnezia0</span></div>
-    <div>Status: <span id="state" class="badge">unknown</span></div>
-    <div>Web Port: <span id="port" class="badge">8080</span></div>
+    <div>Interface: <span class="badge" id="iface">amnezia0</span></div>
+    <div>Status: <span class="badge" id="state">unknown</span></div>
+    <div>Web Port: <span class="badge" id="port">8080</span></div>
   </div>
   <div class="card">
     <button onclick="location.href='/start'">Start</button>
     <button onclick="location.href='/stop'">Stop</button>
     <button onclick="location.href='/restart'">Restart</button>
-  </div>
-</div>
-</body>
-</html>
-EOF_ASP
+  </div></div>EOF_ASP
 }
 
 # Emit simple JSON status used by ASP page
@@ -118,7 +107,7 @@ emit_status_json() {
     if [ -f "$PID_FILE" ] && kill -0 $(cat "$PID_FILE") 2>/dev/null; then
         state="running"
     fi
-    cat > "$WEB_DIR/status.json" <<EOF
+    cat > "$WEB_DIR/status.json" << EOF
 {"interface":"$iface","state":"$state","web_port":"$WEB_PORT"}
 EOF
 }
@@ -129,16 +118,16 @@ install_addon() {
     check_merlin
     create_dirs
     generate_asp
-
+    
     # Copy binary if exists
     if [ -f "$BASE_DIR/amneziawg-go" ]; then
         chmod +x "$BASE_DIR/amneziawg-go"
         print_status "success" "AmneziWG binary ready"
     fi
-
+    
     # Create symlink for global access
     ln -sf "$BASE_DIR/amnezia-ui" "/jffs/scripts/amnezia-ui" 2>/dev/null
-
+    
     # Ensure hooks exist (idempotent)
     if ! grep -q amnezia-ui "/jffs/scripts/services-start" 2>/dev/null; then
         cat >> "/jffs/scripts/services-start" <<'AUTOSTART_APPEND'
@@ -146,11 +135,12 @@ install_addon() {
 AUTOSTART_APPEND
         chmod 755 "/jffs/scripts/services-start"
     fi
+    
     if [ ! -f "/jffs/scripts/firewall-start" ]; then
         echo "#!/bin/sh" > "/jffs/scripts/firewall-start"
         chmod 755 "/jffs/scripts/firewall-start"
     fi
-
+    
     print_status "success" "Installation completed successfully"
 }
 
@@ -169,14 +159,19 @@ start_interface() {
     local interface="$1"
     [ -z "$interface" ] && interface="amnezia0"
     local config="$CONFIG_DIR/$interface.conf"
+    
     if [ ! -f "$config" ]; then
         print_status "warning" "Config missing: $config (starting skeleton)"
     fi
+    
     [ -f "$CUSTOM_DIR/pre-start" ] && . "$CUSTOM_DIR/pre-start"
+    
     print_status "info" "Starting interface: $interface"
     # TODO: integrate amneziawg-go start here
     echo $$ > "$PID_FILE"
+    
     [ -f "$CUSTOM_DIR/post-start" ] && . "$CUSTOM_DIR/post-start"
+    
     print_status "success" "Interface $interface started"
     emit_status_json
 }
@@ -185,10 +180,12 @@ start_interface() {
 stop_interface() {
     local interface="$1"; [ -z "$interface" ] && interface="amnezia0"
     print_status "info" "Stopping interface: $interface"
+    
     if [ -f "$PID_FILE" ]; then
         kill $(cat "$PID_FILE") 2>/dev/null || true
         rm -f "$PID_FILE"
     fi
+    
     print_status "success" "Interface $interface stopped"
     emit_status_json
 }
@@ -208,6 +205,7 @@ add_config() {
         print_status "error" "Configuration file not found: $config_file"
         return 1
     fi
+    
     local basename=$(basename "$config_file")
     cp "$config_file" "$CONFIG_DIR/$basename"
     print_status "success" "Configuration added: $basename"
@@ -219,31 +217,25 @@ start_web() {
         print_status "warning" "Web interface already running on port $WEB_PORT"
         return 0
     fi
-
+    
     print_status "info" "Starting web interface on port $WEB_PORT..."
-
+    
     # Minimal HTTPd content root
     mkdir -p "$WEB_DIR"
-
+    
     # Index page
     cat > "$WEB_DIR/index.html" << EOF
 <!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Amnezia-UI</title></head>
-<body>
-<h3>Amnezia-UI Web Interface v$VERSION</h3>
-<p>Web interface is running on port $WEB_PORT</p>
-<p><a href="/asp">Open ASP status page</a></p>
-</body></html>
-EOF
-
+<meta charset="utf-8"/><meta content="width=device-width,initial-scale=1" name="viewport"/>Amnezia-UIAmnezia-UI Web Interface v$VERSIONWeb interface is running on port $WEB_PORT<a href="/asp">Open ASP status page</a>EOF
+    
     # Status JSON
     emit_status_json
-
+    
     # Start busybox httpd
     cd "$WEB_DIR"
     nohup busybox httpd -p "$WEB_PORT" -h . >/dev/null 2>&1 &
     echo $! > "$WEB_PID"
-
+    
     print_status "success" "Web interface started on http://$(nvram get lan_ipaddr 2>/dev/null || echo router-ip):$WEB_PORT"
 }
 
@@ -279,7 +271,9 @@ show_status() {
 show_usage() {
     cat << EOF
 Amnezia-UI v$VERSION - AmneziaWG Management Tool
+
 Usage: $0 [command] [options]
+
 Commands:
   install                 Install/reinstall addon
   uninstall               Remove addon completely
@@ -289,6 +283,7 @@ Commands:
   status                  Show status information
   add <config_file>       Add configuration file
   web start|stop|status   Manage web interface
+
 Notes:
   - Web UI exposes /asp (ASP-like page) at http://router-ip:8080/asp
   - Auto-start via services-start is configured by installer
