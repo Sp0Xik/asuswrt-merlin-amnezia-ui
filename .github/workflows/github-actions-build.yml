@@ -100,8 +100,8 @@ jobs:
           # Create package directory structure
           mkdir -p package-$arch/addons/amneziaui
           
-          # Copy main script and make executable
-          cp addons/amneziaui/amnezia-ui package-$arch/addons/amneziaui/
+          # Copy main script from root directory and make executable
+          cp amnezia-ui package-$arch/addons/amneziaui/
           chmod +x package-$arch/addons/amneziaui/amnezia-ui
           
           # Copy web interface files if they exist
