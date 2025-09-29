@@ -10,11 +10,16 @@ STOCK_WWW="/www"
 VPN_ASP="Advanced_VPN_Content.asp"
 VPN_TABS_ASP="VPN.asp"
 FIREWALL_ASP="Advanced_Firewall_Content.asp"
+
 echo "Installing Amnezia-UI..."
 # Check JFFS
 if [ ! -d "/jffs" ]; then
     echo "Error: JFFS not enabled"; exit 1
 fi
+
+# Ensure PATH has Entware if present
+if [ -d /opt/bin ]; then export PATH="/opt/sbin:/opt/bin:$PATH"; fi
+
 # Detect architecture
 echo "Detecting router architecture..."
 ARCH=$(uname -m)
@@ -24,35 +29,44 @@ case "$ARCH" in
     aarch64|arm64) PKG_ARCH="aarch64"; echo "Using AArch64/ARM64 package" ;;
     mips|mipsel) PKG_ARCH="mips"; echo "Using MIPS package" ;;
     *) echo "Warning: Unknown architecture '$ARCH', trying AArch64 as fallback..."; PKG_ARCH="aarch64" ;;
-esac
+ esac
+
 # Download package
 cd /tmp || exit 1
 PKG_NAME="amnezia-ui-package-$PKG_ARCH.tar.gz"
 echo "Downloading $PKG_NAME ..."
 wget -q "https://github.com/$REPO/releases/latest/download/$PKG_NAME" || { echo "Download failed"; exit 1; }
 [ -f "$PKG_NAME" ] || { echo "Package missing after download"; exit 1; }
-echo "Downloaded $(ls -lh $PKG_NAME | awk '{print $5}')"
+echo "Downloaded $(ls -lh "$PKG_NAME" | awk '{print $5}')"
+
 # Extract
 mkdir -p "$ADDON_DIR"
 tar -xzf "$PKG_NAME" -C /tmp || { echo "Extract failed"; exit 1; }
 [ -d "/tmp/addons/amneziaui" ] || { echo "Invalid package structure"; exit 1; }
+
 # Install files
 echo "Installing files..."
 cp -r /tmp/addons/amneziaui/* "$ADDON_DIR/" || { echo "Copy failed"; exit 1; }
+
 # Copy wrapper to scripts
+mkdir -p "$SCRIPT_DIR"
 cp "$ADDON_DIR/amnezia-ui" "$SCRIPT_DIR/" 2>/dev/null || true
 chmod 0755 "$SCRIPT_DIR/amnezia-ui" 2>/dev/null || true
 chmod 0755 "$ADDON_DIR/"* 2>/dev/null || true
 mkdir -p "$CUSTOM_DIR"
+
 # Merlin detection and marker
 FIRMWARE_INFO=$(uname -a 2>/dev/null || echo "unknown")
 if echo "$FIRMWARE_INFO" | grep -qi merlin; then
   [ -f /jffs/.asusrouter ] || touch /jffs/.asusrouter 2>/dev/null || true
 fi
+
 # Verify
 if [ -f "$ADDON_DIR/amneziawg-go" ]; then echo "✓ Binary present ($PKG_ARCH)"; else echo "✗ Binary missing"; fi
+
 # Initialize addon (creates ASP page, hooks)
 "$ADDON_DIR/amnezia-ui" install || "$SCRIPT_DIR/amnezia-ui" install || true
+
 # Auto-start hooks (services-start + init-start) for overlay/patch
 mkdir -p "$SCRIPT_DIR"
 # services-start
@@ -77,8 +91,21 @@ sleep 5
 EOINIT
   chmod 755 "$SCRIPT_DIR/init-start"
 fi
+
+# Optional: ensure httpd provider installed (Entware busybox) if missing
+if ! command -v httpd >/dev/null 2>&1 && ! command -v busybox >/dev/null 2>&1; then
+  echo "No httpd or busybox found. Attempting Entware bootstrap (optional)..."
+  if [ -x /opt/bin/opkg ]; then
+    /opt/bin/opkg update >/dev/null 2>&1 || true
+    /opt/bin/opkg install busybox >/dev/null 2>&1 || true
+  else
+    echo "Entware not detected at /opt. You can install Entware to enable web UI."
+  fi
+fi
+
 # Start web now
 "$ADDON_DIR/amnezia-ui" web start || "$SCRIPT_DIR/amnezia-ui" web start || true
+
 # Cleanup
 rm -f "/tmp/$PKG_NAME"; rm -rf /tmp/addons
 printf "\n🎉 Installation complete!\n"
