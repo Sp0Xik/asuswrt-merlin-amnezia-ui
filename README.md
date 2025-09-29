@@ -1,100 +1,227 @@
 # Amnezia-UI for ASUSWRT-Merlin
+
 [![Platform](https://img.shields.io/badge/platform-ASUSWRT--Merlin-blue.svg)](https://www.asuswrt-merlin.net/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![GitHub release](https://img.shields.io/github/release/Sp0Xik/asuswrt-merlin-amnezia-ui.svg)](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases)
 
-AmneziaWG (WireGuard with DPI bypass) addon for ASUSWRT-Merlin routers
-Provides command-line and web interface management for AmneziaWG tunnels with advanced DPI circumvention technologies including CPS control and obfuscation presets (I1-I5, S1-S4, H1-H4).
+**AmneziaWG 1.5** (WireGuard with ultimate DPI bypass) addon for ASUSWRT-Merlin routers
 
-## 🚀 One-Command Installation (Zero manual steps)
-Finally! True one-command installation — no more manual .asusrouter marker creation or compatibility issues!
-```
+🎯 **Native ASP Web Interface** - No external Node.js server needed  
+🚀 **Complete v4.0.0 Rewrite** - Modern ASP-based UI integrated directly into router firmware  
+🛡️ **AmneziaWG 1.5** - Latest DPI circumvention with advanced obfuscation presets  
+⚡ **Ultimate DPI Bypass** - I1-I5, S1-S4, H1-H4 presets + customizable parameters  
+🔧 **Zero Configuration** - Auto-installs, auto-configures, survives reboots  
+
+## 🚀 One-Command Installation
+
+```bash
 curl -sSL https://raw.githubusercontent.com/Sp0Xik/asuswrt-merlin-amnezia-ui/main/install.sh | sh
 ```
-What happens automatically after install:
-- Auto-detect Merlin and auto-create /jffs/.asusrouter marker (like YazFi/XRAYUI)
-- Auto-install addon files and set permissions
-- Auto-create services-start and firewall-start hooks
-- Auto-start web UI on port 8080 and expose ASP page at /asp
-- Auto-generate persistent ASUSWRT ASP integration and add VPN menu button
-- Survives reboot — web UI starts automatically
 
-## Quick Start (optional, everything auto-starts)
-No commands required after install. If you want to manage manually:
-```
-# Add configuration (optional)
+### What Happens Automatically:
+- ✅ Auto-detect ASUSWRT-Merlin and create `/jffs/.asusrouter` marker
+- ✅ Download and install AmneziaWG 1.5 binaries
+- ✅ Create native ASP web interface pages
+- ✅ Integrate VPN menu buttons across all firmware pages
+- ✅ Setup automatic startup hooks (services-start, firewall-start)
+- ✅ Configure persistent overlay system for firmware updates
+- ✅ Auto-start web interface - accessible immediately
+
+## 🎯 Native ASP Web Interface (v4.0.0)
+
+**Revolutionary Change**: No more external Node.js server! The entire web interface is now implemented as native ASUSWRT ASP pages.
+
+### Access Points:
+- **Main UI**: `http://router-ip/user_amneziaui.asp`
+- **Config Manager**: `http://router-ip/user_amneziaui_configs.asp`
+- **Quick Status**: Available from VPN menu in router's native interface
+
+### Integration Locations:
+- 📋 **VPN Menu** - Direct "Amnezia-UI" button in main VPN section
+- 🏠 **Homepage** - Quick access link from main router page
+- ⚙️ **Left Navigation** - Global menu item via menuTree.js injection
+- 🔧 **Advanced Pages** - Links in VPN/Firewall configuration pages
+
+## 🛡️ AmneziaWG 1.5 Features
+
+### DPI Bypass Presets:
+- **I1-I5**: Intermediate obfuscation levels
+- **S1-S4**: Stealth modes with advanced packet manipulation
+- **H1-H4**: High-security presets with maximum obfuscation
+
+### Advanced Parameters:
+- `Jc` (Junk packet count): 3-10 packets
+- `Jmin/Jmax` (Junk size range): 50-1000 bytes
+- `S1/S2` (Init packet sizes): Custom handshake obfuscation
+- `H1-H4` (Header transformations): Advanced DPI evasion
+
+## 📱 Quick Start
+
+After installation, everything starts automatically. Optional manual management:
+
+```bash
+# Configuration management
 amnezia-ui add /path/to/config.conf
-# Start/Stop interface manually (optional)
+amnezia-ui remove config-name
+amnezia-ui list
+
+# Interface control
 amnezia-ui start amnezia0
 amnezia-ui stop amnezia0
-# Web UI control (already running)
-amnezia-ui web status
+amnezia-ui status
+
+# Web interface control (native ASP - no external server)
+amnezia-ui install    # Reinstall ASP pages
+amnezia-ui uninstall  # Remove integration
 ```
-Web UI: http://router-ip:8080
-ASP status page: http://router-ip:8080/asp
+
+## 🔧 Migration from v3.x
+
+**Important**: v4.0.0 completely replaces the external web server architecture.
+
+### Automatic Migration:
+1. Old Node.js web server is automatically stopped and disabled
+2. Existing configurations are migrated to new format
+3. ASP-based interface is installed and activated
+4. All integrations are updated to new architecture
+
+### Manual Migration (if needed):
+```bash
+# Clean old installation
+amnezia-ui uninstall
+
+# Remove old files
+rm -rf /jffs/addons/amneziaui/web/
+rm -f /jffs/addons/amneziaui/*v31*
+
+# Reinstall v4.0.0
+curl -sSL https://raw.githubusercontent.com/Sp0Xik/asuswrt-merlin-amnezia-ui/main/install.sh | sh
+```
+
+## 🎛️ Configuration Examples
+
+### High DPI Bypass (Recommended)
+```ini
+[Interface]
+PrivateKey = YOUR_PRIVATE_KEY
+Address = 10.66.66.2/32
+DNS = 1.1.1.1
+
+[Peer]
+PublicKey = SERVER_PUBLIC_KEY
+Endpoint = your-server.com:51820
+AllowedIPs = 0.0.0.0/0
+# Ultimate DPI bypass
+Jc = 7
+Jmin = 50
+Jmax = 1000
+S1 = 150
+S2 = 200
+H1 = 1
+H2 = 2
+H3 = 3
+H4 = 4
+```
+
+### Stealth Mode
+```ini
+[Interface]
+PrivateKey = YOUR_PRIVATE_KEY
+Address = 10.66.66.2/32
+
+[Peer]
+PublicKey = SERVER_PUBLIC_KEY
+Endpoint = your-server.com:443
+AllowedIPs = 0.0.0.0/0
+# Stealth preset S4
+Jc = 10
+Jmin = 100
+Jmax = 500
+S1 = 100
+S2 = 150
+```
+
+## 📋 Supported Routers
+
+### Fully Tested:
+- **RT-AX88U** (3004.388.x)
+- **RT-AX86U** (3004.388.x+)
+- **RT-AC88U** (386.x+)
+- **RT-AC68U** (386.x+)
+
+### Compatible (reported working):
+- All ASUSWRT-Merlin 3004.388.x+ routers
+- Most 386.x routers with custom scripts enabled
+
+## 🔧 Requirements
+
+- **ASUSWRT-Merlin**: 3004.388.x+ (recommended) or 386.x+
+- **Custom Scripts**: Enabled (`Administration → System → Enable custom scripts and configs`)
+- **Storage Space**: 15MB free in `/jffs`
+- **Entware**: Auto-installed if missing
+
+## 🐛 Troubleshooting
+
+### Common Issues:
+
+**Menu buttons not appearing:**
+```bash
+# Reinstall ASP integration
+amnezia-ui install
+
+# Check logs
+tail -f /tmp/amneziaui.log
+```
+
+**Interface won't start:**
+```bash
+# Check configuration
+amnezia-ui list
+amnezia-ui status
+
+# Restart manually
+amnezia-ui restart amnezia0
+```
+
+**Web interface not accessible:**
+- Native ASP pages should be at `/user_amneziaui.asp`
+- Check if httpd is running: `pidof httpd`
+- Verify `/jffs/.asusrouter` exists
+
+### Debug Information:
+```bash
+# System status
+amnezia-ui status
+
+# Configuration list
+amnezia-ui list
+
+# Check logs
+cat /tmp/amneziaui.log
+
+# Check integration
+ls -la /www/user_amneziaui*
+```
+
+## 📈 Version History
+
+### v4.0.0 (Latest) - Complete Rewrite
+- ✨ **Native ASP Web Interface** - No external Node.js server
+- ⚡ **AmneziaWG 1.5** - Latest DPI circumvention technology
+- 🎯 **Ultimate DPI Bypass** - Full I/S/H preset support
+- 🔧 **Automatic Migration** - Seamless upgrade from v3.x
+- 📱 **Enhanced Integration** - Better menu placement and persistence
+- 🛡️ **Improved Security** - No external web server vulnerabilities
+
+### v3.6.0 (Legacy)
+- Menu integration improvements
+- VPN.asp overlay support
+- menuTree.js global navigation
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-## 🧩 Persistent VPN Menu Integration (XRAYUI-style)
-We implement a real, automatic, persistent integration into the router's stock web UI, just like XRAYUI/YazFi/Diversion.
-Two methods are used automatically by install scripts and hooks:
-1. Overlay injection (preferred, persistent across reboots/updates)
-   - We create /jffs/overlay/www/Advanced_VPN_Content.asp on first boot after update
-   - We inject an Amnezia-UI button linking to /user_amneziaui.asp (mini page)
-   - We bind-mount the overlay to /www/Advanced_VPN_Content.asp after httpd starts
-2. Direct sed patch (fallback)
-   - On every boot, if overlay cannot be applied, we sed-inject the link into /www/Advanced_VPN_Content.asp
-
-Manual commands you can run (optional):
-```
-amnezia-ui install            # ensure ASP mini-page exists and inject links
-amnezia-ui ui overlay         # overlay injections for homepage, VPN/Firewall, VPN.asp, menuTree.js
-amnezia-ui ui patch           # direct sed fallback if overlay not available
-```
-Verification:
-- Visit http://router-ip/Advanced_VPN_Content.asp — should include an Amnezia-UI link
-- Click it — lands on /user_amneziaui.asp with embedded UI and external link
-
-## 🧭 Mini-UI (userX.asp) — Universal Integration on Any Merlin Router
-- File: /www/user_amneziaui.asp (created in overlay at /jffs/overlay/www when available)
-- Contains an embedded iframe that opens the Amnezia-UI web interface at http://router-ip:8080/
-- Provides a direct "Open full UI" button in a new tab
-- A link to this page is injected into:
-  - The router homepage (index.asp via overlay copy)
-  - VPN and Firewall pages when present (Advanced_VPN_Content.asp, Advanced_Firewall_Content.asp)
-
-## 🧨 New in v3.6.0 — Robust menu integration everywhere
-- Add overlay/patch for /www/menuTree.js to insert global left-menu item "Amnezia-UI"
-  - Supports both array-based and object-based menus; appends as fallback
-- Add fallback quick-link injection into /www/User2.asp for legacy firmwares
-- Auto-inject "Amnezia-UI" into the main VPN menu (VPN.asp) regardless of structure
-  - Tries UL/LI lists after WireGuard/OpenVPN/VPNFusion; falls back to plain anchor near headers
-- Keep previous Advanced_VPN_Content.asp / Advanced_Firewall_Content.asp injections
-
-## ✨ Changelog
-- v3.6.0
-  - Overlay patch for /www/menuTree.js to add global "Amnezia-UI" entry
-  - Fallback injection into /www/User2.asp
-  - Robust VPN main menu injection regardless of submenu structure
-  - VERSION bump to 3.6.0
-- v3.5.1
-  - Top-level VPN tab entry injection via VPN.asp overlay (preferred) with fallback
-  - Installer updated to reference VPN.asp variable
-- v3.5.0
-  - Universal Mini-UI: auto-create /www/user_amneziaui.asp
-  - Automatic homepage and VPN/Firewall link injection via overlay
-  - Improved installer/uninstaller flow for UI integration
-
-## Requirements
-- ASUSWRT-Merlin 3004.388.x+
-- Custom scripts enabled
-- 10MB free space in /jffs
-- Entware (auto-installed if missing)
-
-## Troubleshooting
-- If the menu button doesn’t appear, your firmware skin may use different markup. Adjust selectors in addons/amneziaui/amnezia-ui accordingly.
-- Check logs: /tmp/amneziaui.log
-- Ensure /jffs/.asusrouter exists
-
-## License
-MIT
+**Questions?** Open an [issue](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/issues) or check [releases](https://github.com/Sp0Xik/asuswrt-merlin-amnezia-ui/releases) for updates.
