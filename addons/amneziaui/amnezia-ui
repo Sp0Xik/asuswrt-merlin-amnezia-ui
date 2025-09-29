@@ -2,7 +2,7 @@
 # Amnezia-UI for ASUSWRT-Merlin
 # AmneziaWG (WireGuard with DPI bypass) addon
 # Provides command-line and web interface management with router ASP integration
-VERSION="3.6.0"
+VERSION="3.6.1"
 BASE_DIR="/jffs/addons/amneziaui"
 CONFIG_DIR="$BASE_DIR/configs"
 WEB_DIR="$BASE_DIR/web"
@@ -52,37 +52,17 @@ ensure_dirs() {
 }
 # ---------------- Mini-UI (userX.asp) creation & integration ----------------
 user_asp_template() {
-    cat << 'EOF'
-<% nvram("productid"); %><!DOCTYPE html>
-<meta charset="utf-8"/>
-<meta http-equiv="X-UA-Compatible" content="IE=edge"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Amnezia-UI — mini UI</title>
-<style>
-  body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#0b1220;color:#e6edf3}
-  header{background:#161b22;padding:12px 16px;border-bottom:1px solid #30363d}
-  h1{font-size:18px;margin:0}
-  .wrap{padding:16px}
-  .card{background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:16px}
-  .btn{display:inline-block;background:#238636;color:#fff;padding:10px 14px;border-radius:6px;text-decoration:none}
-  .btn.secondary{background:#0969da}
-  .row{display:flex;gap:12px;flex-wrap:wrap}
-  iframe{width:100%;height:70vh;border:1px solid #30363d;border-radius:6px;background:#fff}
-  .hint{color:#8b949e;font-size:12px;margin-top:8px}
-</style>
-<div class="wrap">
-  <div class="card">
-    <div class="row">
-      <a class="btn" href="/user_amneziaui.asp?open=ui">Open embedded UI</a>
-      <a class="btn secondary" target="_blank" href="http://<% nvram("lan_ipaddr"); %>:8080/">Open full UI (new tab)</a>
-    </div>
-    <p class="hint">Service must be running on port 8080. Start via amnezia-ui script if needed.</p>
-  </div>
-  <div class="card" id="embed" style="margin-top:14px;">
-    <iframe title="Amnezia-UI" src="http://<% nvram("lan_ipaddr"); %>:8080/"></iframe>
-  </div>
-</div>
-EOF
+    cat << 'EOF'<% nvram("productid"); %><!DOCTYPE html>
+<meta charset="utf-8"/><meta content="IE=edge" http-equiv="X-UA-Compatible"/><meta content="width=device-width, initial-scale=1" name="viewport"/>Amnezia-UI — mini UI  body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#0b1220;color:#e6edf3}<br>  header{background:#161b22;padding:12px 16px;border-bottom:1px solid #30363d}<br>  h1{font-size:18px;margin:0}<br>  .wrap{padding:16px}<br>  .card{background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:16px}<br>  .btn{display:inline-block;background:#238636;color:#fff;padding:10px 14px;border-radius:6px;text-decoration:none}<br>  .btn.secondary{background:#0969da}<br>  .row{display:flex;gap:12px;flex-wrap:wrap}<br>  iframe{width:100%;height:70vh;border:1px solid #30363d;border-radius:6px;background:#fff}<br>  .hint{color:#8b949e;font-size:12px;margin-top:8px}<div class="wrap">  <div class="card"><br/>
+    <div class="row"><br/>
+      <a class="btn" href="/user_amneziaui.asp?open=ui">Open embedded UI</a><br/>
+      <a class="btn secondary" href="http://<% nvram(" lan_ipaddr="" target="_blank">:8080/"/>Open full UI (new tab)</a><br/>
+    </div><br/>
+    <p class="hint">Service must be running on port 8080. Start via amnezia-ui script if needed.</p><br/>
+  </div><br/>
+  <div class="card" id="embed" style="margin-top:14px;"><br/>
+    <iframe lan_ipaddr="" src="http://<% nvram(" title="Amnezia-UI">:8080/"/>></iframe><br/>
+  </div></div>EOF
 }
 create_user_asp() {
     local target="${USER_ASP_PATH}"
@@ -143,14 +123,14 @@ ensure_vpn_tabs_entry() {
     [ -f "$tabs_ovl" ] || cp -f "$tabs_src" "$tabs_ovl"
     if ! grep -q "user_amneziaui.asp" "$tabs_ovl" 2>/dev/null; then
         # Strategy A: Insert after WireGuard tab or existing VPN submenu links
-        sed -i '/WireGuard\|OpenVPN\|VPNFusion\|VPN Client/ { n; a \\n<li><a href="/user_amneziaui.asp">Amnezia-UI<\/a><\/li>\n' "$tabs_ovl" 2>/dev/null || true
-        # Strategy B: Append within the first </ul> after submenu start
+        sed -i '/WireGuard\|OpenVPN\|VPNFusion\|VPN Client/ { n; a \\n<a href="/user_amneziaui.asp">Amnezia-UI<\/a><\/li>\n' "$tabs_ovl" 2>/dev/null || true
+        # Strategy B: Append within the first  after submenu start
         if ! grep -q "Amnezia-UI" "$tabs_ovl"; then
             sed -i '0,/<\/ul>/ s//\n<li><a href="\/user_amneziaui.asp">Amnezia-UI<\/a><\/li>\n&/' "$tabs_ovl" 2>/dev/null || true
         fi
         # Strategy C: If markup is not UL/LI, inject a plain anchor near VPN section header
         if ! grep -q "Amnezia-UI" "$tabs_ovl"; then
-            sed -i '0,/<\/h2>\|<\/h3>/ s//\n<a href="\/user_amneziaui.asp" style="margin-left:8px;color:#0969da">Amnezia-UI<\/a>\n&/' "$tabs_ovl" 2>/dev/null || true
+            sed -i '0,/<\/h2>\|<\/h3>/ s//\n</a><a href="\/user_amneziaui.asp" style="margin-left:8px;color:#0969da">Amnezia-UI<\/a>\n&/' "$tabs_ovl" 2>/dev/null || true
         fi
         if grep -q "Amnezia-UI" "$tabs_ovl"; then
             print_status success "Injected Amnezia-UI entry into VPN tab list (overlay)"
@@ -180,7 +160,8 @@ patch_menu_tree() {
         fi
         # As ultimate fallback, add simple push into leftMenu if exists
         if ! grep -q "Amnezia-UI" "$js_ovl"; then
-            echo '\n// Amnezia-UI injection\ntry{(window.leftMenu||[]).push({url:"/user_amneziaui.asp",text:"Amnezia-UI"});}catch(e){}' >> "$js_ovl"
+            echo '\n// Amnezia-UI injection
+try{(window.leftMenu||[]).push({url:"/user_amneziaui.asp",text:"Amnezia-UI"});}catch(e){}' >> "$js_ovl"
         fi
         if grep -q "Amnezia-UI" "$js_ovl"; then
             print_status success "menuTree.js patched (overlay)"
@@ -206,12 +187,40 @@ ensure_user2_fallback() {
     fi
 }
 # ---------------- Web server helpers ----------------
+resolve_httpd_bin(){
+    # Prefer Entware httpd if available; else busybox
+    if command -v httpd >/dev/null 2>&1; then
+        echo "$(command -v httpd)"; return 0;
+    fi
+    if command -v busybox >/dev/null 2>&1; then
+        echo "busybox"; return 0;
+    fi
+    return 1
+}
+httpd_supports_f(){
+    # Check if busybox httpd supports -f (run in foreground). Some builds crash with -f
+    if [ "$1" = "busybox" ]; then
+        busybox httpd -h 2>&1 | grep -q -- ' -f ' && return 0 || return 1
+    fi
+    return 0
+}
 start_web_server(){
     if [ -f "$WEB_PID" ] && kill -0 "$(cat "$WEB_PID" 2>/dev/null)" 2>/dev/null; then
         print_status info "Web already running on $WEB_PORT"; return 0; fi
-    busybox httpd -f -p "$WEB_PORT" -h "$WEB_DIR" & disown; echo $! > "$WEB_PID" && \
-      print_status success "Started web on port $WEB_PORT" || \
-      print_status error "Failed to start web server"
+    local httpd_bin
+    if ! httpd_bin="$(resolve_httpd_bin)"; then
+        print_status error "No httpd found (busybox/Entware). Web UI disabled. Install Entware and run: opkg install busybox"; return 1
+    fi
+    if [ ! -d "$WEB_DIR" ]; then mkdir -p "$WEB_DIR"; fi
+    local args="-p $WEB_PORT -h $WEB_DIR"
+    if [ "$httpd_bin" = "busybox" ] && httpd_supports_f busybox; then
+        args="-f $args"
+    fi
+    if [ "$httpd_bin" = "busybox" ]; then
+        $httpd_bin httpd $args & echo $! > "$WEB_PID" && print_status success "Started web on port $WEB_PORT (busybox)" || print_status error "Failed to start busybox httpd"
+    else
+        "$httpd_bin" -p "$WEB_PORT" -h "$WEB_DIR" & echo $! > "$WEB_PID" && print_status success "Started web on port $WEB_PORT (httpd)" || print_status error "Failed to start httpd"
+    fi
 }
 stop_web_server(){ if [ -f "$WEB_PID" ]; then kill $(cat "$WEB_PID" 2>/dev/null) 2>/dev/null; rm -f "$WEB_PID"; print_status success "Web server stopped"; else print_status info "Web server not running"; fi }
 web_status(){ if [ -f "$WEB_PID" ] && kill -0 $(cat "$WEB_PID" 2>/dev/null) 2>/dev/null; then echo running; else echo stopped; fi }
@@ -219,36 +228,4 @@ web_status(){ if [ -f "$WEB_PID" ] && kill -0 $(cat "$WEB_PID" 2>/dev/null) 2>/d
 install_addon(){
     check_merlin
     ensure_dirs
-    create_user_asp
-    ensure_home_link
-    ensure_vpn_fw_links
-    ensure_vpn_tabs_entry
-    patch_menu_tree
-    ensure_user2_fallback
-    print_status success "Mini-UI integration completed (VPN tab + menuTree + User2)"
-}
-uninstall_addon(){
-    rm -f "$OVERLAY_DIR/$USER_ASP_NAME" "$STOCK_WWW/$USER_ASP_NAME" 2>/dev/null || true
-    print_status success "Mini-UI page removed (if existed). Overlay customizations preserved"
-}
-# ---------------- CLI and helpers ----------------
-stop_interface(){ iface="${1:-amnezia0}"; print_status info "Stop $iface"; }
-start_interface(){ iface="${1:-amnezia0}"; print_status info "Start $iface"; }
-restart_interface(){ iface="${1:-amnezia0}"; stop_interface "$iface"; start_interface "$iface"; }
-add_config(){ cfg="$1"; [ -f "$cfg" ] || { print_status error "Config not found"; exit 1; }; cp -f "$cfg" "$CONFIG_DIR"/; print_status success "Config added"; }
-show_status(){
-    echo "Amnezia-UI v$VERSION"
-    echo "Web: $(web_status) on port $WEB_PORT"
-    echo "Config dir: $CONFIG_DIR"
-    echo "Custom dir: $CUSTOM_DIR"
-}
-usage(){ cat << EOF
-Amnezia-UI v$VERSION - AmneziaWG Management Tool
-Usage: $0 [command]
-  install | uninstall
-  start|stop|restart [iface]
-  status
-  add <config_file>
-  web start|stop|status
-  ui overlay|patch
-EOF
+    create
